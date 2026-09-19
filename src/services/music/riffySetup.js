@@ -58,7 +58,18 @@ export function initializeMusic(client) {
 
         for (const node of connectedNodes) {
             try {
-                const attempt = node.rest.getTracks(options.query);
+                let identifier = String(options.query || '').trim();
+                // Match Riffy's normal resolve() behavior: plain text searches
+                // must be prefixed with the configured search platform.
+                if (
+                    identifier &&
+                    !/^https?:\/\//i.test(identifier) &&
+                    !/^[a-z][a-z0-9+.-]*search:/i.test(identifier)
+                ) {
+                    identifier = `${client.riffy.options?.defaultSearchPlatform || lavalinkConfig.defaultSearchPlatform || 'ytmsearch'}:${identifier}`;
+                }
+
+                const attempt = node.rest.getTracks(identifier);
                 const result = await Promise.race([
                     attempt,
                     new Promise((_, reject) => {
