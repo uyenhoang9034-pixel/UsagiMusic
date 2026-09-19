@@ -1,0 +1,20 @@
+{
+  "name": "usagi-music",
+  "version": "1.0.0",
+  "description": "Three Discord music bots sharing one codebase",
+  "main": "src/app.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/app.js"
+  },
+  "dependencies": {
+    "@discordjs/rest": "^2.6.1",
+    "discord.js": "^14.26.4",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "riffy": "1.0.12"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}
