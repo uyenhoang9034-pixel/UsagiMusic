@@ -48,6 +48,25 @@ function startWorker(index, token) {
       if (message?.type === 'ready') {
         state.ready = true;
         state.tag = message.tag || null;
+        return;
+      }
+
+      if (message?.type === 'routePlay') {
+        routePlayRequest(message);
+        return;
+      }
+
+      if (message?.type === 'playResult') {
+        handlePlayResult(message);
+        return;
+      }
+
+      if (message?.type === 'release') {
+        const guildAssignments = assignments.get(message.guildId);
+        if (guildAssignments?.get(message.index)) {
+          guildAssignments.delete(message.index);
+          if (!guildAssignments.size) assignments.delete(message.guildId);
+        }
       }
     });
 
@@ -69,6 +88,84 @@ function startWorker(index, token) {
 }
 
 let shuttingDown = false;
+
+// guildId -> Map(workerIndex -> voiceChannelId)
+const assignments = new Map();
+const pendingRoutes = new Map();
+
+function sendToWorker(index, payload) {
+  const worker = workers.get(index);
+  if (!worker?.ready || !worker.process?.connected) return false;
+  worker.process.send(payload);
+  return true;
+}
+
+function routePlayRequest(message) {
+  const { requestId, guildId, voiceChannelId } = message;
+  let guildAssignments = assignments.get(guildId);
+  if (!guildAssignments) {
+    guildAssignments = new Map();
+    assignments.set(guildId, guildAssignments);
+  }
+
+  // Same voice always keeps the same Music bot.
+  let selected = [...guildAssignments.entries()]
+    .find(([, channelId]) => channelId === voiceChannelId)?.[0];
+
+  // Otherwise choose the first ready bot not already serving another voice
+  // in this guild.
+  if (!selected) {
+    selected = [1, 2, 3].find(
+      (workerIndex) => workers.get(workerIndex)?.ready && !guildAssignments.has(workerIndex),
+    );
+  }
+
+  if (!selected) {
+    sendToWorker(1, {
+      type: 'routeResult',
+      requestId,
+      ok: false,
+      error: 'Cả 3 Usagi Music đều đang được sử dụng ở các phòng voice khác.',
+    });
+    return;
+  }
+
+  guildAssignments.set(selected, voiceChannelId);
+  pendingRoutes.set(requestId, { selected, guildId, voiceChannelId });
+
+  if (!sendToWorker(selected, { ...message, type: 'playOnWorker' })) {
+    guildAssignments.delete(selected);
+    pendingRoutes.delete(requestId);
+    sendToWorker(1, {
+      type: 'routeResult',
+      requestId,
+      ok: false,
+      error: `Usagi Music ${selected} chưa sẵn sàng. Hãy thử lại.`,
+    });
+  }
+}
+
+function handlePlayResult(message) {
+  const pending = pendingRoutes.get(message.requestId);
+  pendingRoutes.delete(message.requestId);
+
+  if (!message.ok && pending) {
+    const guildAssignments = assignments.get(pending.guildId);
+    if (guildAssignments?.get(pending.selected) === pending.voiceChannelId) {
+      guildAssignments.delete(pending.selected);
+      if (!guildAssignments.size) assignments.delete(pending.guildId);
+    }
+  }
+
+  sendToWorker(1, {
+    type: 'routeResult',
+    requestId: message.requestId,
+    ok: message.ok,
+    embed: message.embed,
+    error: message.error,
+    workerIndex: message.index,
+  });
+}
 
 tokens.forEach((token, i) => startWorker(i + 1, token));
 
