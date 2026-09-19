@@ -654,142 +654,127 @@ export function setupPlayerHandler(
 
     /**
      * =====================================================
-     * TRACK ERROR
+     * TRACK ERROR / STUCK RECOVERY
      * =====================================================
      */
+
+    const recoveringGuilds = new Set();
+
+    const continueAfterTrackFailure = async (
+        player,
+        track,
+        reason = 'error',
+    ) => {
+        const guildId = player.guildId;
+        if (recoveringGuilds.has(guildId)) {
+            return;
+        }
+
+        recoveringGuilds.add(guildId);
+
+        try {
+            const guildData = getGuildMusicData(guildId);
+            const title = track?.info?.title || 'Unknown track';
+            const requester = track?.info?.requester || null;
+            let fallbackTrack = null;
+
+            if (!track?.info?.__usagiFallbackTried) {
+                try {
+                    const author = track?.info?.author || '';
+                    const fallbackResult = await client.riffy.resolve({
+                        query: `scsearch:${title} ${author}`.trim(),
+                        requester,
+                    });
+
+                    fallbackTrack = Array.isArray(fallbackResult?.tracks)
+                        ? fallbackResult.tracks[0]
+                        : null;
+
+                    if (fallbackTrack) {
+                        fallbackTrack.info ??= {};
+                        fallbackTrack.info.requester = requester;
+                        fallbackTrack.info.__usagiFallbackTried = true;
+
+                        // Retry this song before the rest of the queue.
+                        player.queue?.unshift?.(fallbackTrack);
+                    }
+                } catch (fallbackError) {
+                    logger.warn(
+                        `Music fallback failed for "${title}":`,
+                        fallbackError,
+                    );
+                }
+            }
+
+            // Riffy emits trackError/trackStuck and then immediately calls
+            // stop(). Wait until that stop has completed before starting the
+            // replacement/next track, otherwise the new playback is stopped
+            // by the old error event.
+            await new Promise((resolve) => setTimeout(resolve, 350));
+
+            const hasNext = Number(player.queue?.length || 0) > 0;
+            if (hasNext) {
+                try {
+                    await player.play();
+                } catch (playError) {
+                    logger.warn(
+                        `Could not continue queue after "${title}" failed:`,
+                        playError,
+                    );
+                }
+            }
+
+            const channel = client.channels.cache.get(
+                guildData.playerChannelId || player.textChannel,
+            );
+
+            // Keep Discord clean: only report when a track was actually
+            // skipped. Successful automatic fallback stays silent.
+            if (!fallbackTrack) {
+                await channel
+                    ?.send(
+                        hasNext
+                            ? `Không phát được **${title}** — đã tự bỏ qua và chuyển sang bài tiếp theo.`
+                            : `Không phát được **${title}** — đã bỏ qua. Hàng chờ hiện đã hết.`,
+                    )
+                    .catch(() => null);
+            }
+
+            logger.warn(
+                `Recovered music track ${reason} in ${guildId}: "${title}"${fallbackTrack ? ' using fallback source' : ' by skipping'}.`,
+            );
+        } finally {
+            recoveringGuilds.delete(guildId);
+        }
+    };
 
     client.riffy.on(
         'trackError',
-        async (
-            player,
-            track,
-            payload,
-        ) => {
-            try {
-                const guildData =
-                    getGuildMusicData(
-                        player.guildId,
-                    );
+        (player, track, payload) => {
+            logger.error(
+                `Track error in ${player.guildId} for "${track?.info?.title || 'Unknown track'}":`,
+                payload?.error || payload,
+            );
 
-                const title =
-                    track?.info?.title ||
-                    'Unknown track';
-
-                logger.error(
-                    `Track error in ${player.guildId} for "${title}":`,
-                    payload?.error ||
-                        payload,
-                );
-
-                // Retry only once. This prevents an endless fallback loop.
-                if (!track?.info?.__usagiFallbackTried) {
-                    try {
-                        const author =
-                            track?.info?.author ||
-                            '';
-
-                        const fallbackResult =
-                            await client.riffy.resolve({
-                                query:
-                                    `scsearch:${title} ${author}`.trim(),
-                                requester:
-                                    track?.info?.requester ||
-                                    null,
-                            });
-
-                        const fallbackTrack =
-                            Array.isArray(
-                                fallbackResult?.tracks,
-                            )
-                                ? fallbackResult.tracks[0]
-                                : null;
-
-                        if (fallbackTrack) {
-                            fallbackTrack.info ??= {};
-                            fallbackTrack.info.requester =
-                                track?.info?.requester ||
-                                null;
-                            fallbackTrack.info.__usagiFallbackTried =
-                                true;
-
-                            if (
-                                typeof player.queue?.add ===
-                                'function'
-                            ) {
-                                player.queue.add(
-                                    fallbackTrack,
-                                );
-                            } else {
-                                player.queue?.push?.(
-                                    fallbackTrack,
-                                );
-                            }
-
-                            player.stop();
-
-                            const channel =
-                                client.channels.cache.get(
-                                    guildData.playerChannelId ||
-                                        player.textChannel,
-                                );
-
-                            await channel
-                                ?.send(
-                                    `YouTube source failed for **${title}** — trying another audio source automatically...`,
-                                )
-                                .catch(() => null);
-
-                            return;
-                        }
-                    } catch (fallbackError) {
-                        logger.warn(
-                            `Music fallback failed for "${title}":`,
-                            fallbackError,
-                        );
-                    }
-                }
-
-                const channel =
-                    client.channels.cache.get(
-                        guildData.playerChannelId ||
-                            player.textChannel,
-                    );
-
-                await channel
-                    ?.send(
-                        `Failed to play **${title}**. Skipping...`,
-                    )
-                    .catch(() => null);
-            } catch (error) {
-                logger.error(
-                    'Music trackError handler error:',
-                    error,
-                );
-            }
+            void continueAfterTrackFailure(
+                player,
+                track,
+                'error',
+            );
         },
     );
 
-    /**
-     * =====================================================
-     * TRACK STUCK
-     * =====================================================
-     */
-
     client.riffy.on(
         'trackStuck',
-        async (
-            player,
-            track,
-            payload,
-        ) => {
+        (player, track, payload) => {
             logger.warn(
-                `Track stuck in ${player.guildId} for "${
-                    track?.info?.title ||
-                    'Unknown track'
-                }" (${
-                    payload?.thresholdMs ||
-                    'unknown'
-                }ms)`,
+                `Track stuck in ${player.guildId} for "${track?.info?.title || 'Unknown track'}" (${payload?.thresholdMs || 'unknown'}ms)`,
+            );
+
+            void continueAfterTrackFailure(
+                player,
+                track,
+                'stuck',
             );
         },
     );
