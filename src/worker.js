@@ -152,7 +152,24 @@ client.on('interactionCreate', async (interaction) => {
     // are handled locally by that worker.
     if (interaction.isButton()) {
       const handler = musicButtons.find((entry) => entry.name === interaction.customId);
-      if (handler) await handler.execute(interaction, client);
+      if (!handler) return;
+
+      // The dashboard message can be created by Music 2/3 while Discord may
+      // deliver the component interaction to another bot process only when
+      // that bot owns the message. For the owning worker, fetch the member so
+      // voice-state permission checks never depend on a partial interaction
+      // member payload/cache.
+      if (interaction.guild && interaction.user?.id) {
+        const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+        if (member) {
+          Object.defineProperty(interaction, 'member', {
+            value: member,
+            configurable: true,
+          });
+        }
+      }
+
+      await handler.execute(interaction, client);
     }
   } catch (error) {
     logger.error(`[Usagi Music ${index}] interaction error:`, error);
