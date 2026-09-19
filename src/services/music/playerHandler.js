@@ -678,21 +678,7 @@ export function setupPlayerHandler(
             const requester = track?.info?.requester || null;
             let fallbackTrack = null;
 
-            // YouTube 403/login failures are source/client failures on the
-            // Lavalink node. Searching the same song again through another
-            // YouTube result only creates a retry loop, so skip directly.
-            const failureText = String(
-                reason === 'error'
-                    ? (track?.info?.__usagiLastError || '')
-                    : '',
-            ).toLowerCase();
-            const skipYouTubeFallback =
-                failureText.includes('status code: 403') ||
-                failureText.includes('status code 403') ||
-                failureText.includes('requires login') ||
-                failureText.includes('sign in');
-
-            if (!skipYouTubeFallback && !track?.info?.__usagiFallbackTried) {
+            if (!track?.info?.__usagiFallbackTried) {
                 try {
                     const author = track?.info?.author || '';
                     const fallbackResult = await client.riffy.resolve({
@@ -765,22 +751,9 @@ export function setupPlayerHandler(
     client.riffy.on(
         'trackError',
         (player, track, payload) => {
-            const rawError =
-                payload?.error ||
-                payload?.exception?.message ||
-                payload?.message ||
-                payload ||
-                '';
-
-            track.info ??= {};
-            track.info.__usagiLastError =
-                typeof rawError === 'string'
-                    ? rawError
-                    : JSON.stringify(rawError);
-
             logger.error(
                 `Track error in ${player.guildId} for "${track?.info?.title || 'Unknown track'}":`,
-                rawError,
+                payload?.error || payload,
             );
 
             void continueAfterTrackFailure(
