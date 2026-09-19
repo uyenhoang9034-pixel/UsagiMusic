@@ -39,10 +39,9 @@ export function initializeMusic(client) {
 
     setupPlayerHandler(client);
 
-    // Riffy normally resolves through one node. Public Lavalink nodes can stay
-    // websocket-connected while their REST/loadtracks endpoint is unhealthy.
-    // Wrap resolve so every /play can fail over across the currently connected
-    // nodes instead of hanging on that one node.
+    // Public nodes can remain websocket-connected while their loadtracks
+    // endpoint is unhealthy. Try Riffy's own resolver against each connected
+    // node so v4 responses are converted into Track objects correctly.
     const originalResolve = client.riffy.resolve.bind(client.riffy);
     const RESOLVE_NODE_TIMEOUT_MS = 7_000;
 
@@ -54,22 +53,11 @@ export function initializeMusic(client) {
             return originalResolve(options);
         }
 
-        const errors = [];
+        const failures = [];
 
         for (const node of connectedNodes) {
             try {
-                let identifier = String(options.query || '').trim();
-                // Match Riffy's normal resolve() behavior: plain text searches
-                // must be prefixed with the configured search platform.
-                if (
-                    identifier &&
-                    !/^https?:\/\//i.test(identifier) &&
-                    !/^[a-z][a-z0-9+.-]*search:/i.test(identifier)
-                ) {
-                    identifier = `${client.riffy.options?.defaultSearchPlatform || lavalinkConfig.defaultSearchPlatform || 'ytmsearch'}:${identifier}`;
-                }
-
-                const attempt = node.rest.getTracks(identifier);
+                const attempt = originalResolve({ ...options, node });
                 const result = await Promise.race([
                     attempt,
                     new Promise((_, reject) => {
@@ -82,28 +70,34 @@ export function initializeMusic(client) {
                     }),
                 ]);
 
-                if (result) {
-                    // Keep requester metadata compatible with Riffy's normal
-                    // resolve() output.
-                    if (Array.isArray(result.tracks)) {
-                        for (const track of result.tracks) {
-                            track.info ??= {};
-                            track.info.requester = options.requester;
-                        }
-                    }
+                const loadType = String(result?.loadType || '').toLowerCase();
+                const hasTracks = Array.isArray(result?.tracks) && result.tracks.length > 0;
+
+                if (hasTracks) {
                     return result;
                 }
+
+                failures.push(`${node.name}: ${loadType || 'empty'}`);
+                logger.warn(
+                    `Lavalink "${node.name}" returned no tracks (${loadType || 'empty'}), trying next node.`,
+                );
             } catch (error) {
-                errors.push(`${node.name}: ${error?.message || error}`);
+                failures.push(`${node.name}: ${error?.message || error}`);
                 logger.warn(
                     `Lavalink resolve failed on "${node.name}", trying next node: ${error?.message || error}`,
                 );
             }
         }
 
-        throw new Error(
-            `All connected Lavalink nodes failed to resolve the request. ${errors.join(' | ')}`,
-        );
+        logger.warn(`All Lavalink nodes returned no playable result: ${failures.join(' | ')}`);
+
+        return {
+            loadType: 'empty',
+            exception: null,
+            playlistInfo: null,
+            pluginInfo: {},
+            tracks: [],
+        };
     };
 
     client.on('raw', (packet) => {
