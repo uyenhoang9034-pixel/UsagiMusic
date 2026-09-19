@@ -52,8 +52,21 @@ function getTrackArtwork(track) {
         info.thumbnailUrl ||
         info.thumbnailURL;
 
-    if (directArtwork) {
+    // Some Lavalink plugins return artwork metadata as an object instead of
+    // a URL string. Discord EmbedBuilder only accepts a valid URL here.
+    if (typeof directArtwork === 'string' && /^https?:\/\//i.test(directArtwork)) {
         return directArtwork;
+    }
+
+    if (directArtwork && typeof directArtwork === 'object') {
+        const nestedArtwork =
+            directArtwork.url ||
+            directArtwork.uri ||
+            directArtwork.src;
+
+        if (typeof nestedArtwork === 'string' && /^https?:\/\//i.test(nestedArtwork)) {
+            return nestedArtwork;
+        }
     }
 
     const identifier =
