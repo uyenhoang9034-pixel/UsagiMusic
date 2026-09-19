@@ -276,8 +276,12 @@ export async function joinVoiceChannel(client, interaction) {
 export async function playQuery(client, interaction, query) {
   const cleanQuery = String(query || '').trim();
 
+  // Treat real collection URLs as playlists. Previously only YouTube
+  // playlists were recognized, so Spotify album/playlist responses were
+  // reduced to tracks[0].
   const isExplicitPlaylist =
-    /(?:[?&]list=|youtube\.com\/playlist)/i.test(cleanQuery);
+    /(?:[?&]list=|youtube\.com\/playlist)/i.test(cleanQuery) ||
+    /^https?:\/\/(?:open\.)?spotify\.com\/(?:intl-[^/]+\/)?(?:album|playlist)\//i.test(cleanQuery);
 
   if (!cleanQuery) {
     throw new TitanBotError(
