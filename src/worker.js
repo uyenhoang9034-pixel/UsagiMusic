@@ -85,7 +85,7 @@ async function executeRoutedPlay(message) {
     const voiceChannel = guild.channels.cache.get(voiceChannelId);
     const textChannel = guild.channels.cache.get(textChannelId);
     const member = guild.members.cache.get(userId);
-    const user = client.users.cache.get(userId);
+    const user = member?.user || client.users.cache.get(userId);
 
     if (!voiceChannel || !textChannel || !member || !user) {
       throw new Error('Không lấy được thông tin voice/người dùng. Hãy thử lại.');
