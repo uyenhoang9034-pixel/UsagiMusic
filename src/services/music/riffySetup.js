@@ -58,7 +58,7 @@ export function initializeMusic(client) {
 
         for (const node of connectedNodes) {
             try {
-                const attempt = node.rest.resolve(options.query);
+                const attempt = node.rest.getTracks(options.query);
                 const result = await Promise.race([
                     attempt,
                     new Promise((_, reject) => {
