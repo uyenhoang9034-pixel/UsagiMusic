@@ -5,7 +5,8 @@
   "main": "src/app.js",
   "type": "module",
   "scripts": {
-    "start": "node src/app.js"
+    "start": "node src/app.js",
+    "check": "node --check src/app.js && node --check src/worker.js && node --check src/services/music/riffySetup.js && node --check src/services/music/musicActions.js && node --check src/services/music/playerHandler.js"
   },
   "dependencies": {
     "@discordjs/rest": "^2.6.1",
