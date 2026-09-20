@@ -51,20 +51,23 @@ export function initializeMusic(client) {
 
         const connectedNodes = [...client.riffy.nodeMap.values()]
             .filter((node) => node.connected)
-            // For independent fallback searches, prefer a remote node first.
-            // This avoids using the same Railway IP/source that just failed
-            // YouTube playback. The private node remains available afterward.
+            // Prefer healthy nodes. For independent SoundCloud recovery,
+            // prefer a remote node over the private Railway node when health
+            // is otherwise equal, so playback does not depend on one host.
             .sort((a, b) => {
+                const failureDelta =
+                    (a.__usagiResolveFailures || 0) -
+                    (b.__usagiResolveFailures || 0);
+                if (failureDelta !== 0) return failureDelta;
+
                 if (isIndependentFallback) {
                     const aPrivate = a.name === 'Usagi Private' ? 1 : 0;
                     const bPrivate = b.name === 'Usagi Private' ? 1 : 0;
-                    if (aPrivate !== bPrivate) return aPrivate - bPrivate;
+                    return aPrivate - bPrivate;
                 }
+
                 return 0;
-            })
-            // Prefer nodes that have successfully answered recently. A public
-            // node can keep its websocket open while its source plugins fail.
-            .sort((a, b) => (a.__usagiResolveFailures || 0) - (b.__usagiResolveFailures || 0));
+            });
 
         if (!connectedNodes.length) {
             return originalResolve(options);
