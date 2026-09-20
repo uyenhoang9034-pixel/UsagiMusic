@@ -685,9 +685,11 @@ export function setupPlayerHandler(
                     // not exist there, and public/source outages can make a
                     // valid fallback look empty. Try independent searches in
                     // order and use the first playable result.
+                    // A failed YouTube track must not "fallback" to another
+                    // YouTube search result: Railway/YouTube can reject every
+                    // stream on the same source (login/anti-bot). Prefer an
+                    // independent audio source first.
                     const fallbackQueries = [
-                        `ytmsearch:${title} ${author}`.trim(),
-                        `ytsearch:${title} ${author}`.trim(),
                         `scsearch:${title} ${author}`.trim(),
                     ];
 
