@@ -46,8 +46,22 @@ export function initializeMusic(client) {
     const RESOLVE_NODE_TIMEOUT_MS = 10_000;
 
     client.riffy.resolve = async (options) => {
+        const requestedQuery = String(options?.query || '');
+        const isIndependentFallback = requestedQuery.toLowerCase().startsWith('scsearch:');
+
         const connectedNodes = [...client.riffy.nodeMap.values()]
             .filter((node) => node.connected)
+            // For independent fallback searches, prefer a remote node first.
+            // This avoids using the same Railway IP/source that just failed
+            // YouTube playback. The private node remains available afterward.
+            .sort((a, b) => {
+                if (isIndependentFallback) {
+                    const aPrivate = a.name === 'Usagi Private' ? 1 : 0;
+                    const bPrivate = b.name === 'Usagi Private' ? 1 : 0;
+                    if (aPrivate !== bPrivate) return aPrivate - bPrivate;
+                }
+                return 0;
+            })
             // Prefer nodes that have successfully answered recently. A public
             // node can keep its websocket open while its source plugins fail.
             .sort((a, b) => (a.__usagiResolveFailures || 0) - (b.__usagiResolveFailures || 0));
