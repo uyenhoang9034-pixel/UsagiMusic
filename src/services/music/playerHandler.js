@@ -681,14 +681,36 @@ export function setupPlayerHandler(
             if (!track?.info?.__usagiFallbackTried) {
                 try {
                     const author = track?.info?.author || '';
-                    const fallbackResult = await client.riffy.resolve({
-                        query: `scsearch:${title} ${author}`.trim(),
-                        requester,
-                    });
+                    // Do not rely on SoundCloud alone. Some songs do
+                    // not exist there, and public/source outages can make a
+                    // valid fallback look empty. Try independent searches in
+                    // order and use the first playable result.
+                    const fallbackQueries = [
+                        `ytmsearch:${title} ${author}`.trim(),
+                        `ytsearch:${title} ${author}`.trim(),
+                        `scsearch:${title} ${author}`.trim(),
+                    ];
 
-                    fallbackTrack = Array.isArray(fallbackResult?.tracks)
-                        ? fallbackResult.tracks[0]
-                        : null;
+                    for (const fallbackQuery of fallbackQueries) {
+                        try {
+                            const fallbackResult = await client.riffy.resolve({
+                                query: fallbackQuery,
+                                requester,
+                            });
+                            const candidate = Array.isArray(fallbackResult?.tracks)
+                                ? fallbackResult.tracks[0]
+                                : null;
+                            if (candidate) {
+                                fallbackTrack = candidate;
+                                break;
+                            }
+                        } catch (sourceError) {
+                            logger.warn(
+                                `Music fallback source failed for "${title}" (${fallbackQuery.split(':')[0]}):`,
+                                sourceError?.message || sourceError,
+                            );
+                        }
+                    }
 
                     if (fallbackTrack) {
                         fallbackTrack.info ??= {};
