@@ -1,5 +1,12 @@
 [
   {
+    "host": "127.0.0.1",
+    "port": 2333,
+    "password": "youshallnotpass",
+    "secure": false,
+    "name": "Usagi Private"
+  },
+  {
     "host": "lavalinkv4.serenetia.com",
     "port": 443,
     "password": "https://seretia.link/discord",
