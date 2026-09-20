@@ -666,90 +666,129 @@ export function setupPlayerHandler(
         reason = 'error',
     ) => {
         const guildId = player.guildId;
-        if (recoveringGuilds.has(guildId)) {
-            return;
-        }
+        if (recoveringGuilds.has(guildId)) return;
 
         recoveringGuilds.add(guildId);
 
         try {
             const guildData = getGuildMusicData(guildId);
             const title = track?.info?.title || 'Unknown track';
+            const author = track?.info?.author || '';
             const requester = track?.info?.requester || null;
-            let fallbackTrack = null;
 
-            if (!track?.info?.__usagiFallbackTried) {
+            // A TrackException means the node that is ACTUALLY playing the
+            // track is unhealthy for this source. Resolving on another node
+            // without moving the player does nothing, because Riffy players
+            // are bound to one node. Riffy 1.0.12 has native player migration;
+            // use it and resolve the replacement on that same destination.
+            player.__usagiFailedNodes ??= new Set();
+            if (player.node?.name) {
+                player.__usagiFailedNodes.add(player.node.name);
+                player.node.__usagiPlaybackFailures =
+                    (player.node.__usagiPlaybackFailures || 0) + 1;
+            }
+
+            const destinations = [...client.riffy.nodeMap.values()]
+                .filter((node) =>
+                    node.connected &&
+                    node !== player.node &&
+                    !player.__usagiFailedNodes.has(node.name)
+                )
+                .sort((a, b) =>
+                    (a.__usagiPlaybackFailures || 0) -
+                    (b.__usagiPlaybackFailures || 0)
+                );
+
+            let recovered = false;
+            let lastError = null;
+
+            for (const destination of destinations) {
                 try {
-                    const author = track?.info?.author || '';
-                    // Do not rely on SoundCloud alone. Some songs do
-                    // not exist there, and public/source outages can make a
-                    // valid fallback look empty. Try independent searches in
-                    // order and use the first playable result.
-                    // A failed YouTube track must not "fallback" to another
-                    // YouTube search result: Railway/YouTube can reject every
-                    // stream on the same source (login/anti-bot). Prefer an
-                    // independent audio source first.
-                    const fallbackQueries = [
+                    logger.warn(
+                        `Playback failed on "${player.node?.name || 'unknown'}"; migrating ${guildId} to "${destination.name}".`,
+                    );
+
+                    await client.riffy.migrate(player, destination);
+
+                    // moveTo() preserves the old current track. Stop it before
+                    // starting a newly encoded replacement on this node.
+                    try {
+                        player.stop();
+                    } catch {}
+
+                    const queries = [
                         `scsearch:${title} ${author}`.trim(),
+                        `ytmsearch:${title} ${author}`.trim(),
+                        `ytsearch:${title} ${author}`.trim(),
                     ];
 
-                    for (const fallbackQuery of fallbackQueries) {
-                        try {
-                            const fallbackResult = await client.riffy.resolve({
-                                query: fallbackQuery,
-                                requester,
-                            });
-                            const candidate = Array.isArray(fallbackResult?.tracks)
-                                ? fallbackResult.tracks[0]
-                                : null;
-                            if (candidate) {
-                                fallbackTrack = candidate;
-                                break;
-                            }
-                        } catch (sourceError) {
-                            logger.warn(
-                                `Music fallback source failed for "${title}" (${fallbackQuery.split(':')[0]}):`,
-                                sourceError?.message || sourceError,
-                            );
-                        }
+                    let replacement = null;
+                    for (const query of queries) {
+                        const result = await client.riffy.resolve({
+                            query,
+                            requester,
+                            node: destination,
+                            __usagiNodeOnly: true,
+                        });
+
+                        replacement = Array.isArray(result?.tracks)
+                            ? result.tracks[0]
+                            : null;
+
+                        if (replacement) break;
                     }
 
-                    if (fallbackTrack) {
-                        fallbackTrack.info ??= {};
-                        fallbackTrack.info.requester = requester;
-                        fallbackTrack.info.__usagiFallbackTried = true;
-
-                        // Riffy's Queue is not guaranteed to implement
-                        // Array.unshift(). Use its public add() API so the
-                        // fallback is actually queued before calling play().
-                        if (typeof player.queue?.add === 'function') {
-                            player.queue.add(fallbackTrack);
-                        } else if (Array.isArray(player.queue)) {
-                            player.queue.push(fallbackTrack);
-                        }
+                    if (!replacement) {
+                        throw new Error('destination returned no replacement track');
                     }
-                } catch (fallbackError) {
+
+                    replacement.info ??= {};
+                    replacement.info.requester = requester;
+
+                    // Put recovery ahead of the existing queue.
+                    if (typeof player.queue?.unshift === 'function') {
+                        player.queue.unshift(replacement);
+                    } else if (typeof player.queue?.add === 'function') {
+                        player.queue.add(replacement);
+                    } else {
+                        player.queue.push(replacement);
+                    }
+
+                    // Riffy's TrackException handler calls stop() immediately
+                    // after emitting our event. Let that finish first.
+                    await new Promise((resolve) => setTimeout(resolve, 500));
+                    await player.play();
+
+                    recovered = true;
                     logger.warn(
-                        `Music fallback failed for "${title}":`,
-                        fallbackError,
+                        `Recovered "${title}" by moving playback to "${destination.name}".`,
+                    );
+                    break;
+                } catch (error) {
+                    lastError = error;
+                    destination.__usagiPlaybackFailures =
+                        (destination.__usagiPlaybackFailures || 0) + 1;
+                    player.__usagiFailedNodes.add(destination.name);
+                    logger.warn(
+                        `Playback recovery failed on "${destination.name}" for "${title}": ${error?.message || error}`,
                     );
                 }
             }
 
-            // Riffy emits trackError/trackStuck and then immediately calls
-            // stop(). Wait until that stop has completed before starting the
-            // replacement/next track, otherwise the new playback is stopped
-            // by the old error event.
-            await new Promise((resolve) => setTimeout(resolve, 350));
+            if (recovered) return;
 
+            // No node could recover this track. Continue any real queued song
+            // rather than crashing the worker or repeatedly retrying the same
+            // broken source.
+            await new Promise((resolve) => setTimeout(resolve, 350));
             const hasNext = Number(player.queue?.length || 0) > 0;
+
             if (hasNext) {
                 try {
                     await player.play();
                 } catch (playError) {
                     logger.warn(
-                        `Could not continue queue after "${title}" failed:`,
-                        playError,
+                        `Could not continue queue after "${title}" failed: ${playError?.message || playError}`,
                     );
                 }
             }
@@ -758,20 +797,16 @@ export function setupPlayerHandler(
                 guildData.playerChannelId || player.textChannel,
             );
 
-            // Keep Discord clean: only report when a track was actually
-            // skipped. Successful automatic fallback stays silent.
-            if (!fallbackTrack) {
-                await channel
-                    ?.send(
-                        hasNext
-                            ? `Không phát được **${title}** — đã tự bỏ qua và chuyển sang bài tiếp theo.`
-                            : `Không phát được **${title}** — đã bỏ qua. Hàng chờ hiện đã hết.`,
-                    )
-                    .catch(() => null);
-            }
+            await channel
+                ?.send(
+                    hasNext
+                        ? `Không phát được **${title}** — đã tự chuyển sang bài tiếp theo.`
+                        : `Không phát được **${title}** trên các nguồn hiện có — hàng chờ đã hết.`,
+                )
+                .catch(() => null);
 
             logger.warn(
-                `Recovered music track ${reason} in ${guildId}: "${title}"${fallbackTrack ? ' using fallback source' : ' by skipping'}.`,
+                `All playback nodes failed for "${title}" (${reason})${lastError ? `: ${lastError.message || lastError}` : ''}.`,
             );
         } finally {
             recoveringGuilds.delete(guildId);
