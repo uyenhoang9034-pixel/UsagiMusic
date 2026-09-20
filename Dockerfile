@@ -6,7 +6,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm install --omit=dev
 COPY . .
 ARG LAVALINK_VERSION=4.2.0
 RUN curl -fL --retry 5 --retry-delay 2 "https://github.com/lavalink-devs/Lavalink/releases/download/${LAVALINK_VERSION}/Lavalink.jar" -o /app/lavalink/Lavalink.jar
