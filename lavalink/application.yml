@@ -38,10 +38,11 @@ plugins:
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
     clients:
-      - MUSIC
-      - TVHTML5_SIMPLY
-      - WEB
-      - WEBEMBEDDED
+  - MUSIC
+  - TV
+  - MWEB
+  - WEB
+  - WEBEMBEDDED
     oauth:
       enabled: true
       refreshToken: "${YOUTUBE_REFRESH_TOKEN:}"
