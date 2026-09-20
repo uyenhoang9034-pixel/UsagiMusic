@@ -681,7 +681,13 @@ export function setupPlayerHandler(
             // without moving the player does nothing, because Riffy players
             // are bound to one node. Riffy 1.0.12 has native player migration;
             // use it and resolve the replacement on that same destination.
+            const recoveryKey = `${title}::${author}`;
+            if (player.__usagiRecoveryKey !== recoveryKey) {
+                player.__usagiRecoveryKey = recoveryKey;
+                player.__usagiFailedNodes = new Set();
+            }
             player.__usagiFailedNodes ??= new Set();
+
             if (player.node?.name) {
                 player.__usagiFailedNodes.add(player.node.name);
                 player.node.__usagiPlaybackFailures =
