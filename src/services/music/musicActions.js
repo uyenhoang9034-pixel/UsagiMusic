@@ -1,4 +1,3 @@
-import { once } from 'node:events';
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 
 import { successEmbed } from '../../utils/embeds.js';
@@ -72,40 +71,10 @@ function assertBotVoicePermissions(channel) {
   }
 }
 
-async function waitForPlayerConnection(player) {
-  if (player.connected) {
-    return;
-  }
-
-  try {
-    await player.connection?.resolve?.();
-  } catch {
-    // Fall through to event-based wait.
-  }
-
-  if (player.connected) {
-    return;
-  }
-
-  try {
-    await once(player, 'connectionRestored', {
-      signal: AbortSignal.timeout(PLAYER_CONNECT_TIMEOUT_MS),
-    });
-  } catch {
-    // Timed out waiting for Lavalink to confirm the voice session.
-  }
-
-  if (!player.connected) {
-    throw new TitanBotError(
-      'Voice connection failed',
-      ErrorTypes.CONFIGURATION,
-      'Could not connect to the voice channel. Ensure Lavalink is online and the bot has Connect/Speak permission.',
-    );
-  }
-}
-
 export async function startPlayback(player) {
-  await waitForPlayerConnection(player);
+  // Riffy handles the normal initial Discord voice handshake itself.
+  // connectionRestored is a recovery event, so waiting for it here can make
+  // first playback time out even though the voice connection is healthy.
   await player.play();
 }
 
@@ -206,12 +175,21 @@ function isDuplicateTrack(player, track) {
 
 export async function ensurePlayer(client, interaction) {
   assertRiffyAvailable(client);
+  assertLavalinkNodeAvailable(client);
   assertInVoice(interaction.member);
 
   const guildId = interaction.guild.id;
   const guildData = getGuildMusicData(guildId);
+  const channel = interaction.member.voice.channel;
+
+  assertBotVoicePermissions(channel);
 
   let player = getPlayer(client, guildId);
+
+  if (player && player.voiceChannel !== channel.id) {
+    try { player.destroy(); } catch {}
+    player = null;
+  }
 
   if (!player) {
     player = client.riffy.createConnection({
