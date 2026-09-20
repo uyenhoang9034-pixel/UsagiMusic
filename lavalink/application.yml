@@ -39,14 +39,9 @@ plugins:
     allowDirectPlaylistIds: true
     clients:
       - MUSIC
-      - TV
       - MWEB
       - WEB
       - WEBEMBEDDED
-    remoteCipher:
-      url: "https://cipher.kikkia.dev/"
-      password: "dummypassword"
-      retryOnFailure: true
   lavasrc:
     providers:
       - "yt-dlp:\"%ISRC%\""
