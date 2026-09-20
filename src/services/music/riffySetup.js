@@ -43,11 +43,14 @@ export function initializeMusic(client) {
     // endpoint is unhealthy. Try Riffy's own resolver against each connected
     // node so v4 responses are converted into Track objects correctly.
     const originalResolve = client.riffy.resolve.bind(client.riffy);
-    const RESOLVE_NODE_TIMEOUT_MS = 7_000;
+    const RESOLVE_NODE_TIMEOUT_MS = 10_000;
 
     client.riffy.resolve = async (options) => {
         const connectedNodes = [...client.riffy.nodeMap.values()]
-            .filter((node) => node.connected);
+            .filter((node) => node.connected)
+            // Prefer nodes that have successfully answered recently. A public
+            // node can keep its websocket open while its source plugins fail.
+            .sort((a, b) => (a.__usagiResolveFailures || 0) - (b.__usagiResolveFailures || 0));
 
         if (!connectedNodes.length) {
             return originalResolve(options);
@@ -74,14 +77,18 @@ export function initializeMusic(client) {
                 const hasTracks = Array.isArray(result?.tracks) && result.tracks.length > 0;
 
                 if (hasTracks) {
+                    node.__usagiResolveFailures = 0;
+                    node.__usagiLastResolveOk = Date.now();
                     return result;
                 }
 
+                node.__usagiResolveFailures = (node.__usagiResolveFailures || 0) + 1;
                 failures.push(`${node.name}: ${loadType || 'empty'}`);
                 logger.warn(
                     `Lavalink "${node.name}" returned no tracks (${loadType || 'empty'}), trying next node.`,
                 );
             } catch (error) {
+                node.__usagiResolveFailures = (node.__usagiResolveFailures || 0) + 1;
                 failures.push(`${node.name}: ${error?.message || error}`);
                 logger.warn(
                     `Lavalink resolve failed on "${node.name}", trying next node: ${error?.message || error}`,
