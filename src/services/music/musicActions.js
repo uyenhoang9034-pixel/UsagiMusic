@@ -271,10 +271,24 @@ export async function playQuery(client, interaction, query) {
 
   const { player } = await ensurePlayer(client, interaction);
 
-  const result = await client.riffy.resolve({
-    query: cleanQuery,
+  // Search plain song names through Spotify first. LavaSrc supports
+  // spsearch and returns Spotify metadata; actual audio is mirrored through
+  // the configured playable providers. Direct URLs keep their native loader.
+  const isUrl = /^https?:\/\//i.test(cleanQuery);
+  const resolveQuery = isUrl ? cleanQuery : `spsearch:${cleanQuery}`;
+
+  let result = await client.riffy.resolve({
+    query: resolveQuery,
     requester: interaction.user,
   });
+
+  // Keep /play useful if Spotify search itself is temporarily unavailable.
+  if (!isUrl && (!Array.isArray(result?.tracks) || result.tracks.length === 0)) {
+    result = await client.riffy.resolve({
+      query: cleanQuery,
+      requester: interaction.user,
+    });
+  }
 
   const loadType = String(result?.loadType || '').toUpperCase();
   const tracks = Array.isArray(result?.tracks) ? result.tracks : [];
