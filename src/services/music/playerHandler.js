@@ -695,8 +695,14 @@ export function setupPlayerHandler(
                         fallbackTrack.info.requester = requester;
                         fallbackTrack.info.__usagiFallbackTried = true;
 
-                        // Retry this song before the rest of the queue.
-                        player.queue?.unshift?.(fallbackTrack);
+                        // Riffy's Queue is not guaranteed to implement
+                        // Array.unshift(). Use its public add() API so the
+                        // fallback is actually queued before calling play().
+                        if (typeof player.queue?.add === 'function') {
+                            player.queue.add(fallbackTrack);
+                        } else if (Array.isArray(player.queue)) {
+                            player.queue.push(fallbackTrack);
+                        }
                     }
                 } catch (fallbackError) {
                     logger.warn(
