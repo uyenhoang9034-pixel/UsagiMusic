@@ -42,6 +42,7 @@ plugins:
       - ANDROID_VR
       - WEB
       - WEBEMBEDDED
+      - TVHTML5EMBEDDED
   lavasrc:
     providers:
       - "ytsearch:\"%ISRC%\""
