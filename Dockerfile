@@ -1,10 +1,11 @@
 FROM node:22-bookworm
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openjdk-17-jre-headless curl ca-certificates \
+ && apt-get install -y --no-install-recommends openjdk-17-jre-headless curl ca-certificates python3 python3-pip ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+RUN python3 -m pip install --break-system-packages --no-cache-dir -U yt-dlp
 COPY package*.json ./
 RUN npm install --omit=dev
 COPY . .
