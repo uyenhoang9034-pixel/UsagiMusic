@@ -46,6 +46,15 @@ export function initializeMusic(client) {
     const RESOLVE_NODE_TIMEOUT_MS = 10_000;
 
     client.riffy.resolve = async (options) => {
+        // Internal recovery can pin a resolve to the exact node that will
+        // actually play the track. Do not run the normal cross-node resolver
+        // in that case, otherwise a track can be encoded by node A and then
+        // handed to a player that is attached to node B.
+        if (options?.node && options?.__usagiNodeOnly) {
+            const { __usagiNodeOnly, ...nodeOptions } = options;
+            return originalResolve(nodeOptions);
+        }
+
         const requestedQuery = String(options?.query || '');
         const isIndependentFallback = requestedQuery.toLowerCase().startsWith('scsearch:');
 
