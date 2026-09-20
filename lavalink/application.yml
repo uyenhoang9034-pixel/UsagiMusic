@@ -9,7 +9,7 @@ lavalink:
     - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.1"
       snapshot: false
   server:
-    password: "${LAVALINK_SERVER_PASSWORD:youshallnotpass}"
+    password: "usagi-private-lavalink"
     sources:
       youtube: false
       bandcamp: true
