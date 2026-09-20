@@ -39,10 +39,13 @@ plugins:
     allowDirectPlaylistIds: true
     clients:
       - MUSIC
-      - ANDROID_VR
+      - TVHTML5_SIMPLY
       - WEB
       - WEBEMBEDDED
-      - TVHTML5EMBEDDED
+    oauth:
+      enabled: true
+      refreshToken: "${YOUTUBE_REFRESH_TOKEN:}"
+      skipInitialization: ${YOUTUBE_OAUTH_SKIP_INITIALIZATION:false}
   lavasrc:
     providers:
       - "ytsearch:\"%ISRC%\""
@@ -68,3 +71,4 @@ logging:
   level:
     root: INFO
     lavalink: INFO
+    dev.lavalink.youtube.http.YoutubeOauth2Handler: INFO
