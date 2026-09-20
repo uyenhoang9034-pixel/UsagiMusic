@@ -82,20 +82,30 @@ async function executeRoutedPlay(message) {
     const guild = client.guilds.cache.get(guildId);
     if (!guild) throw new Error('Bot nhạc được chọn không có trong server này.');
 
-    const voiceChannel = guild.channels.cache.get(voiceChannelId);
-    const textChannel = guild.channels.cache.get(textChannelId);
-    const member = guild.members.cache.get(userId);
-    const user = member?.user || client.users.cache.get(userId);
+    const voiceChannel =
+      guild.channels.cache.get(voiceChannelId) ||
+      await guild.channels.fetch(voiceChannelId).catch(() => null);
+    const textChannel =
+      guild.channels.cache.get(textChannelId) ||
+      await guild.channels.fetch(textChannelId).catch(() => null);
+    const member =
+      guild.members.cache.get(userId) ||
+      await guild.members.fetch(userId).catch(() => null);
+    const user =
+      member?.user ||
+      client.users.cache.get(userId) ||
+      await client.users.fetch(userId).catch(() => null);
 
     if (!voiceChannel || !textChannel || !member || !user) {
       throw new Error('Không lấy được thông tin voice/người dùng. Hãy thử lại.');
     }
 
-    // Adapter shaped like the fields Music core actually uses.
+    // Keep the real GuildMember. Spreading it into a plain object drops
+    // Discord.js getters used by voice/permission checks.
     const routedInteraction = {
       guild,
       channel: textChannel,
-      member: { ...member, voice: { channel: voiceChannel } },
+      member,
       user,
     };
 
