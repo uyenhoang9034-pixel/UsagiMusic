@@ -43,10 +43,6 @@ plugins:
       - MWEB
       - WEB
       - WEBEMBEDDED
-    oauth:
-      enabled: true
-      refreshToken: "${YOUTUBE_REFRESH_TOKEN:}"
-      skipInitialization: ${YOUTUBE_OAUTH_SKIP_INITIALIZATION:false}
     remoteCipher:
       url: "https://cipher.kikkia.dev/"
       password: "dummypassword"
