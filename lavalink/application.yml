@@ -49,10 +49,12 @@ plugins:
       retryOnFailure: true
   lavasrc:
     providers:
+      - "yt-dlp:\"%ISRC%\""
+      - "scsearch:%QUERY%"
+      - "yt-dlp:%QUERY%"
       - "ytsearch:\"%ISRC%\""
       - "ytmsearch:%QUERY%"
       - "ytsearch:%QUERY%"
-      - "scsearch:%QUERY%"
     sources:
       spotify: true
       applemusic: false
@@ -60,6 +62,7 @@ plugins:
       yandexmusic: false
       flowerytts: false
       youtube: false
+      ytdlp: true
     spotify:
       clientId: "${SPOTIFY_CLIENT_ID:}"
       clientSecret: "${SPOTIFY_CLIENT_SECRET:}"
@@ -67,6 +70,15 @@ plugins:
       countryCode: "VN"
       playlistLoadLimit: 6
       albumLoadLimit: 6
+      resolveArtistsInSearch: true
+      preferPartnerApi: false
+    ytdlp:
+      path: "yt-dlp"
+      searchLimit: 10
+      mixPlaylistLoadLimit: 25
+      playlistLoadLimit: 1000
+      customLoadArgs: ["-q", "--no-warnings", "--flat-playlist", "--skip-download", "-J"]
+      customPlaybackArgs: ["-q", "--no-warnings", "-f", "bestaudio/best", "-J"]
 
 logging:
   level:
