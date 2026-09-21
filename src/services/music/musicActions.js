@@ -29,7 +29,7 @@ import {
 
 const YOUTUBE_URL_PATTERN = /(?:youtube\.com|youtu\.be)/i;
 const SPOTIFY_EPISODE_PATTERN = /^https?:\/\/(?:open\.)?spotify\.com\/(?:intl-[^/]+\/)?episode\/([^?/#]+)/i;
-const SOUNDCLOUD_PROFILE_TRACKS_PATTERN = /^https?:\/\/(?:www\.)?soundcloud\.com\/([^/?#]+)\/tracks\/?(?:[?#].*)?$/i;
+const SOUNDCLOUD_PROFILE_TRACKS_PATTERN = /^https?:\/\/(?:www\.)?soundcloud\.com\/([^/?#]+)\/(?:tracks|popular-tracks)\/?(?:[?#].*)?$/i;
 const SPECIAL_URL_MAX_TRACKS = 100;
 const PLAYER_CONNECT_TIMEOUT_MS = 12_000;
 
