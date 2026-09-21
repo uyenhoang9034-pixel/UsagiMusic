@@ -53,13 +53,13 @@ async function resolveSoundCloudProfileTracks(client, interaction, url) {
   const match = url.match(SOUNDCLOUD_PROFILE_TRACKS_PATTERN);
   const profileSlug = match?.[1] || '';
 
-  // /<user>/tracks is already a dedicated yt-dlp SoundCloud collection.
-  // Do not re-filter the returned Lavalink tracks by info.uri: LavaSrc's
-  // yt-dlp bridge does not guarantee that uploader_url/webpage_url survives
-  // in Riffy's Track.info, so the previous ownership filter rejected valid
-  // tracks from the requested profile.
+  // Do NOT send /<user>/tracks through LavaSrc's yt-dlp search bridge.
+  // In this stack that bridge can interpret the collection entries as search
+  // terms and mirror them to unrelated audio. Lavalink's native SoundCloud
+  // source understands SoundCloud user collection URLs and preserves the
+  // actual SoundCloud track URLs.
   const result = await client.riffy.resolve({
-    query: `yt-dlp:${url}`,
+    query: url,
     requester: interaction.user,
   });
 
@@ -67,7 +67,26 @@ async function resolveSoundCloudProfileTracks(client, interaction, url) {
     return null;
   }
 
-  result.tracks = result.tracks.slice(0, SPECIAL_URL_MAX_TRACKS);
+  const normalizedSlug = profileSlug.toLowerCase();
+  const exactProfileTracks = result.tracks.filter((track) => {
+    const info = track?.info || {};
+    const uri = String(info.uri || '').toLowerCase();
+    const sourceName = String(info.sourceName || '').toLowerCase();
+
+    return (
+      sourceName === 'soundcloud' &&
+      uri.includes(`soundcloud.com/${normalizedSlug}/`)
+    );
+  });
+
+  // Never queue mirrored/search results for a profile collection. If native
+  // SoundCloud did not return verifiable tracks for this exact profile, fail
+  // instead of playing unrelated music.
+  if (!exactProfileTracks.length) {
+    return null;
+  }
+
+  result.tracks = exactProfileTracks.slice(0, SPECIAL_URL_MAX_TRACKS);
   result.loadType = 'playlist';
   result.playlistInfo ??= {};
   result.playlistInfo.name ||= `SoundCloud · ${profileSlug} · Tracks`;
