@@ -254,6 +254,15 @@ export async function ensurePlayer(client, interaction) {
     player = null;
   }
 
+  // A Riffy Player can remain in the players map after its Discord voice
+  // Connection was destroyed/disconnected. Reusing that stale Player makes
+  // player.play() throw "Player connection is not initiated". Only replace
+  // that broken session; healthy existing players/queues are left untouched.
+  if (player && !player.connection) {
+    try { player.destroy(); } catch {}
+    player = null;
+  }
+
   if (!player) {
     player = client.riffy.createConnection({
       guildId,
