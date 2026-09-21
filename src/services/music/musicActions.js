@@ -28,7 +28,46 @@ import {
 } from './playerHandler.js';
 
 const YOUTUBE_URL_PATTERN = /(?:youtube\.com|youtu\.be)/i;
+const SPOTIFY_EPISODE_PATTERN = /^https?:\/\/(?:open\.)?spotify\.com\/(?:intl-[^/]+\/)?episode\/([^?/#]+)/i;
+const SOUNDCLOUD_PROFILE_TRACKS_PATTERN = /^https?:\/\/(?:www\.)?soundcloud\.com\/([^/?#]+)\/tracks\/?(?:[?#].*)?$/i;
+const SPECIAL_URL_MAX_TRACKS = 100;
 const PLAYER_CONNECT_TIMEOUT_MS = 12_000;
+
+async function resolveSpotifyEpisodeFallback(client, interaction, url) {
+  // LavaSrc does not support Spotify episode URLs. yt-dlp can inspect the
+  // public page and, when possible, return a playable episode or enough
+  // metadata for its own extractor.
+  const result = await client.riffy.resolve({
+    query: `yt-dlp:${url}`,
+    requester: interaction.user,
+  });
+
+  if (Array.isArray(result?.tracks) && result.tracks.length) {
+    return result;
+  }
+
+  return null;
+}
+
+async function resolveSoundCloudProfileTracks(client, interaction, url) {
+  // /user/tracks is a SoundCloud profile tab, not a normal Lavaplayer track
+  // URL. yt-dlp understands the collection page and returns its public tracks
+  // without requiring us to store a SoundCloud API credential.
+  const result = await client.riffy.resolve({
+    query: `yt-dlp:${url}`,
+    requester: interaction.user,
+  });
+
+  if (!Array.isArray(result?.tracks) || !result.tracks.length) {
+    return null;
+  }
+
+  result.tracks = result.tracks.slice(0, SPECIAL_URL_MAX_TRACKS);
+  result.loadType = 'playlist';
+  result.playlistInfo ??= {};
+  result.playlistInfo.name ||= `SoundCloud · ${url.match(SOUNDCLOUD_PROFILE_TRACKS_PATTERN)?.[1] || 'Tracks'}`;
+  return result;
+}
 
 function getConnectedLavalinkNodes(client) {
   if (!client.riffy?.nodeMap) {
@@ -257,9 +296,12 @@ export async function playQuery(client, interaction, query) {
   // Treat real collection URLs as playlists. Previously only YouTube
   // playlists were recognized, so Spotify album/playlist responses were
   // reduced to tracks[0].
+  const isSoundCloudProfileTracks = SOUNDCLOUD_PROFILE_TRACKS_PATTERN.test(cleanQuery);
+  const isSpotifyEpisode = SPOTIFY_EPISODE_PATTERN.test(cleanQuery);
   const isExplicitPlaylist =
     /(?:[?&]list=|youtube\.com\/playlist)/i.test(cleanQuery) ||
-    /^https?:\/\/(?:open\.)?spotify\.com\/(?:intl-[^/]+\/)?(?:album|playlist)\//i.test(cleanQuery);
+    /^https?:\/\/(?:open\.)?spotify\.com\/(?:intl-[^/]+\/)?(?:album|playlist)\//i.test(cleanQuery) ||
+    isSoundCloudProfileTracks;
 
   if (!cleanQuery) {
     throw new TitanBotError(
@@ -277,10 +319,20 @@ export async function playQuery(client, interaction, query) {
   const isUrl = /^https?:\/\//i.test(cleanQuery);
   const resolveQuery = isUrl ? cleanQuery : `spsearch:${cleanQuery}`;
 
-  let result = await client.riffy.resolve({
-    query: resolveQuery,
-    requester: interaction.user,
-  });
+  let result;
+
+  if (isSoundCloudProfileTracks) {
+    result = await resolveSoundCloudProfileTracks(client, interaction, cleanQuery);
+  } else if (isSpotifyEpisode) {
+    result = await resolveSpotifyEpisodeFallback(client, interaction, cleanQuery);
+  }
+
+  if (!result) {
+    result = await client.riffy.resolve({
+      query: resolveQuery,
+      requester: interaction.user,
+    });
+  }
 
   // Keep /play useful if Spotify search itself is temporarily unavailable.
   if (!isUrl && (!Array.isArray(result?.tracks) || result.tracks.length === 0)) {
@@ -303,9 +355,13 @@ export async function playQuery(client, interaction, query) {
     throw new TitanBotError(
       'No results',
       ErrorTypes.USER_INPUT,
-      YOUTUBE_URL_PATTERN.test(cleanQuery)
-        ? 'Lavalink could not resolve this YouTube URL. Try another YouTube video.'
-        : 'No results found for that query.',
+      isSpotifyEpisode
+        ? 'Spotify podcast episode này không có nguồn audio công khai mà bot có thể phát.'
+        : isSoundCloudProfileTracks
+          ? 'Không lấy được track công khai nào từ trang SoundCloud này.'
+          : YOUTUBE_URL_PATTERN.test(cleanQuery)
+            ? 'Lavalink could not resolve this YouTube URL. Try another YouTube video.'
+            : 'No results found for that query.',
     );
   }
 
