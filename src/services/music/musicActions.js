@@ -50,9 +50,12 @@ async function resolveSpotifyEpisodeFallback(client, interaction, url) {
 }
 
 async function resolveSoundCloudProfileTracks(client, interaction, url) {
-  // /user/tracks is a SoundCloud profile tab, not a normal Lavaplayer track
-  // URL. yt-dlp understands the collection page and returns its public tracks
-  // without requiring us to store a SoundCloud API credential.
+  const match = url.match(SOUNDCLOUD_PROFILE_TRACKS_PATTERN);
+  const profileSlug = match?.[1] || '';
+
+  // IMPORTANT: keep the exact /<user>/tracks URL. yt-dlp has a dedicated
+  // SoundCloud user-tracks extractor. Searching the slug/title instead can
+  // return unrelated popular tracks, which is not what this URL means.
   const result = await client.riffy.resolve({
     query: `yt-dlp:${url}`,
     requester: interaction.user,
@@ -62,10 +65,35 @@ async function resolveSoundCloudProfileTracks(client, interaction, url) {
     return null;
   }
 
-  result.tracks = result.tracks.slice(0, SPECIAL_URL_MAX_TRACKS);
+  // Accept only tracks that yt-dlp attributes to this SoundCloud profile.
+  // This prevents reposts/search matches/other artists from leaking into the
+  // queue if an extractor or remote Lavalink node interprets the URL loosely.
+  const normalizedSlug = profileSlug.toLowerCase();
+  const ownedTracks = result.tracks.filter((track) => {
+    const info = track?.info || {};
+    const uri = String(info.uri || info.url || '').toLowerCase();
+    const author = String(info.author || '').toLowerCase();
+    const plugin = track?.pluginInfo || {};
+    const uploaderUrl = String(plugin.uploaderUrl || plugin.artistUrl || '').toLowerCase();
+
+    return (
+      uri.includes(`soundcloud.com/${normalizedSlug}/`) ||
+      uploaderUrl.includes(`soundcloud.com/${normalizedSlug}`) ||
+      author === normalizedSlug
+    );
+  });
+
+  // If the extractor returned tracks but none can be proven to belong to the
+  // requested profile, fail closed instead of filling the queue with random
+  // music.
+  if (!ownedTracks.length) {
+    return null;
+  }
+
+  result.tracks = ownedTracks.slice(0, SPECIAL_URL_MAX_TRACKS);
   result.loadType = 'playlist';
   result.playlistInfo ??= {};
-  result.playlistInfo.name ||= `SoundCloud · ${url.match(SOUNDCLOUD_PROFILE_TRACKS_PATTERN)?.[1] || 'Tracks'}`;
+  result.playlistInfo.name ||= `SoundCloud · ${profileSlug} · Tracks`;
   return result;
 }
 
