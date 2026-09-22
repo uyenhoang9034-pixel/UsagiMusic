@@ -5,6 +5,7 @@ import { logger } from '../../utils/logger.js';
 import {
     getGuildMusicData,
     clearUpdateInterval,
+    deleteGuildMusicData,
 } from './playerStore.js';
 
 import {
@@ -643,6 +644,13 @@ export function setupPlayerHandler(
                     guildData.idleTimeout =
                         null;
                 }
+
+                // The player is fully gone, so its per-guild dashboard,
+                // history, queue-page and timer state is no longer useful.
+                // Remove the store entry instead of retaining it forever.
+                deleteGuildMusicData(
+                    player.guildId,
+                );
             } catch (error) {
                 logger.error(
                     'Music playerDisconnect error:',
