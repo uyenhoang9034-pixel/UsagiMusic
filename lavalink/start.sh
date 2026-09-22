@@ -2,7 +2,10 @@
 set -eu
 echo "[UsagiMusic] Starting private Lavalink..."
 cd /app/lavalink
-java -Xms128m -Xmx512m -jar Lavalink.jar --spring.config.location=file:/app/lavalink/application.yml &
+# Keep the always-on Lavalink JVM lean. 64m is enough for idle/startup while
+# 256m leaves room for normal multi-bot playback without reserving a 512m heap.
+# These values only bound Java heap; playback logic/sources are unchanged.
+java -Xms64m -Xmx256m -XX:+UseG1GC -jar Lavalink.jar --spring.config.location=file:/app/lavalink/application.yml &
 LAVALINK_PID=$!
 cleanup() { kill "$LAVALINK_PID" 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
