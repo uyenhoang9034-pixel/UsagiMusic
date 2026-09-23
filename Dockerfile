@@ -1,15 +1,14 @@
-FROM node:22-bookworm
-
-RUN apt-get update \
- && apt-get install -y --no-install-recommends openjdk-17-jre-headless curl ca-certificates python3 python3-pip ffmpeg \
- && rm -rf /var/lib/apt/lists/*
+FROM node:22-alpine
 
 WORKDIR /app
-RUN python3 -m pip install --break-system-packages --no-cache-dir -U yt-dlp
+
+# Copy package descriptors first to leverage Docker layer caching
 COPY package*.json ./
 RUN npm install --omit=dev
+
+# Copy application source code
 COPY . .
-ARG LAVALINK_VERSION=4.2.0
-RUN curl -fL --retry 5 --retry-delay 2 "https://github.com/lavalink-devs/Lavalink/releases/download/${LAVALINK_VERSION}/Lavalink.jar" -o /app/lavalink/Lavalink.jar
-RUN chmod +x /app/lavalink/start.sh
-CMD ["/app/lavalink/start.sh"]
+
+# Set production environment and launch single-process controller with capped V8 heap
+ENV NODE_ENV=production
+CMD ["node", "--max-old-space-size=128", "src/app.js"]

@@ -242,7 +242,7 @@ export async function ensurePlayer(client, interaction) {
   assertInVoice(interaction.member);
 
   const guildId = interaction.guild.id;
-  const guildData = getGuildMusicData(guildId);
+  const guildData = getGuildMusicData(guildId, client);
   const channel = interaction.member.voice.channel;
 
   assertBotVoicePermissions(channel);
@@ -287,7 +287,7 @@ export async function joinVoiceChannel(client, interaction) {
   assertInVoice(interaction.member);
 
   const guildId = interaction.guild.id;
-  const guildData = getGuildMusicData(guildId);
+  const guildData = getGuildMusicData(guildId, client);
   const channel = interaction.member.voice.channel;
 
   assertBotVoicePermissions(channel);
@@ -530,7 +530,7 @@ export async function stopPlayback(client, interaction) {
 
   assertCanControl(interaction.member, player);
 
-  const guildData = getGuildMusicData(interaction.guild.id);
+  const guildData = getGuildMusicData(interaction.guild.id, interaction.client);
   const queueLength = getQueueLength(player);
 
   if (queueLength >= 5 && guildData.stopConfirmPending !== interaction.user.id) {
@@ -643,7 +643,7 @@ export async function shuffleQueue(client, interaction) {
   assertCanControl(interaction.member, player);
 
   player.queue.shuffle?.();
-  getGuildMusicData(interaction.guild.id).shuffle = true;
+  getGuildMusicData(interaction.guild.id, interaction.client).shuffle = true;
 
   await refreshPlayerMessage(client, interaction.guild.id);
   return successEmbed('Shuffled', 'The queue has been shuffled.');
@@ -662,7 +662,7 @@ export async function setLoopMode(client, interaction, mode) {
 
   assertCanControl(interaction.member, player);
 
-  const guildData = getGuildMusicData(interaction.guild.id);
+  const guildData = getGuildMusicData(interaction.guild.id, interaction.client);
   const safeMode = ['none', 'track', 'queue'].includes(mode) ? mode : 'none';
 
   guildData.loop = safeMode;
@@ -680,7 +680,7 @@ export async function setLoopMode(client, interaction, mode) {
 }
 
 export async function toggleLoop(client, interaction) {
-  const guildData = getGuildMusicData(interaction.guild.id);
+  const guildData = getGuildMusicData(interaction.guild.id, interaction.client);
   const next = guildData.loop === 'none'
     ? 'track'
     : guildData.loop === 'track'
@@ -703,7 +703,7 @@ export async function setVolume(client, interaction, volume) {
 
   assertCanControl(interaction.member, player);
 
-  const guildData = getGuildMusicData(interaction.guild.id);
+  const guildData = getGuildMusicData(interaction.guild.id, interaction.client);
   guildData.volume = Math.max(0, Math.min(100, Number(volume) || 0));
 
   player.setVolume(guildData.volume);
@@ -713,7 +713,7 @@ export async function setVolume(client, interaction, volume) {
 }
 
 export async function adjustVolume(client, interaction, delta) {
-  const guildData = getGuildMusicData(interaction.guild.id);
+  const guildData = getGuildMusicData(interaction.guild.id, interaction.client);
   return setVolume(client, interaction, guildData.volume + delta);
 }
 
@@ -853,7 +853,7 @@ export async function clearQueue(client, interaction) {
 }
 
 export async function setTwentyFourSeven(client, interaction, enabled) {
-  const guildData = getGuildMusicData(interaction.guild.id);
+  const guildData = getGuildMusicData(interaction.guild.id, client || interaction.client);
   guildData.twentyFourSeven = Boolean(enabled);
 
   return successEmbed(
@@ -875,7 +875,7 @@ export function buildNowPlayingReply(client, guildId) {
     );
   }
 
-  const guildData = getGuildMusicData(guildId);
+  const guildData = getGuildMusicData(guildId, client);
 
   return {
     embeds: [
@@ -984,7 +984,7 @@ export async function leaveVoiceChannel(client, interaction) {
 
   const channel = interaction.guild.channels.cache.get(player.voiceChannel);
   const channelName = channel?.name || 'voice channel';
-  const guildData = getGuildMusicData(guildId);
+  const guildData = getGuildMusicData(guildId, client);
 
   await destroyPlayerSession(client, guildId, player, guildData, {
     forceDisconnect: true,

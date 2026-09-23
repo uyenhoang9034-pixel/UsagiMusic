@@ -305,7 +305,7 @@ async function handleMusicButton(interaction, client) {
   }
 
   const player = getPlayer(client, guildId);
-  const guildData = getGuildMusicData(guildId);
+  const guildData = getGuildMusicData(guildId, client);
 
   if (interaction.customId === MUSIC_BUTTON_IDS.QUEUE) {
     return openQueue(interaction, client, player, guildData, guildId);

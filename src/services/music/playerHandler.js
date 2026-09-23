@@ -123,6 +123,7 @@ export async function refreshPlayerMessage(
         const guildData =
             getGuildMusicData(
                 guildId,
+                client,
             );
 
         const embed =
@@ -170,6 +171,7 @@ function startUpdateInterval(
     const guildData =
         getGuildMusicData(
             guildId,
+            client,
         );
 
     clearUpdateInterval(
@@ -362,6 +364,7 @@ export function setupPlayerHandler(
                 const guildData =
                     getGuildMusicData(
                         player.guildId,
+                        client,
                     );
 
                 /**
@@ -465,6 +468,7 @@ export function setupPlayerHandler(
                 const guildData =
                     getGuildMusicData(
                         player.guildId,
+                        client,
                     );
 
                 clearUpdateInterval(
@@ -591,6 +595,7 @@ export function setupPlayerHandler(
                 const guildData =
                     getGuildMusicData(
                         player.guildId,
+                        client,
                     );
 
                 clearUpdateInterval(
@@ -650,6 +655,7 @@ export function setupPlayerHandler(
                 // Remove the store entry instead of retaining it forever.
                 deleteGuildMusicData(
                     player.guildId,
+                    client,
                 );
             } catch (error) {
                 logger.error(
@@ -679,7 +685,7 @@ export function setupPlayerHandler(
         recoveringGuilds.add(guildId);
 
         try {
-            const guildData = getGuildMusicData(guildId);
+            const guildData = getGuildMusicData(guildId, client);
             const title = track?.info?.title || 'Unknown track';
             const author = track?.info?.author || '';
             const requester = track?.info?.requester || null;

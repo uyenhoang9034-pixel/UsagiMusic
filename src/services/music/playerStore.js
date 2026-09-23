@@ -25,22 +25,44 @@ export function clearUpdateInterval(guildData) {
     }
 }
 
-const guildStore = new Map();
+const fallbackGuildStore = new Map();
 
-export function getGuildMusicData(guildId) {
-    if (!guildStore.has(guildId)) {
-        guildStore.set(guildId, new GuildMusicData());
-    }
-    return guildStore.get(guildId);
-}
-
-export function deleteGuildMusicData(guildId) {
-    const guildData = guildStore.get(guildId);
-    if (guildData) {
-        clearUpdateInterval(guildData);
-        if (guildData.idleTimeout) {
-            clearTimeout(guildData.idleTimeout);
+export function getGuildMusicData(guildId, client) {
+    if (client) {
+        if (!client._guildMusicStore) {
+            client._guildMusicStore = new Map();
         }
+        if (!client._guildMusicStore.has(guildId)) {
+            client._guildMusicStore.set(guildId, new GuildMusicData());
+        }
+        return client._guildMusicStore.get(guildId);
     }
-    guildStore.delete(guildId);
+
+    if (!fallbackGuildStore.has(guildId)) {
+        fallbackGuildStore.set(guildId, new GuildMusicData());
+    }
+    return fallbackGuildStore.get(guildId);
 }
+
+export function deleteGuildMusicData(guildId, client) {
+    if (client?._guildMusicStore) {
+        const guildData = client._guildMusicStore.get(guildId);
+        if (guildData) {
+            clearUpdateInterval(guildData);
+            if (guildData.idleTimeout) {
+                clearTimeout(guildData.idleTimeout);
+            }
+        }
+        client._guildMusicStore.delete(guildId);
+    }
+
+    const fallbackData = fallbackGuildStore.get(guildId);
+    if (fallbackData) {
+        clearUpdateInterval(fallbackData);
+        if (fallbackData.idleTimeout) {
+            clearTimeout(fallbackData.idleTimeout);
+        }
+        fallbackGuildStore.delete(guildId);
+    }
+}
+

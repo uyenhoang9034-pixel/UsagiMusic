@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
-import { fork } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { MessageFlags } from 'discord.js';
 import { logger } from './utils/logger.js';
+import { UsagiMusicWorker } from './worker.js';
 
 const tokens = [
   process.env.MUSIC_BOT_1_TOKEN,
@@ -18,156 +18,101 @@ if (new Set(tokens).size !== 3) {
   throw new Error('The three MUSIC_BOT_*_TOKEN values must belong to three different bots.');
 }
 
-const workerFile = fileURLToPath(new URL('./worker.js', import.meta.url));
-const workers = new Map();
-
-function startWorker(index, token) {
-  const state = {
-    index,
-    ready: false,
-    tag: null,
-    restarts: 0,
-    process: null,
-  };
-  workers.set(index, state);
-
-  const spawn = () => {
-    const child = fork(workerFile, [], {
-      env: {
-        ...process.env,
-        USAGI_MUSIC_WORKER: String(index),
-        USAGI_MUSIC_TOKEN: token,
-      },
-      stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
-    });
-
-    state.process = child;
-    state.ready = false;
-
-    child.on('message', (message) => {
-      if (message?.type === 'ready') {
-        state.ready = true;
-        state.tag = message.tag || null;
-        return;
-      }
-
-      if (message?.type === 'routePlay') {
-        routePlayRequest(message);
-        return;
-      }
-
-      if (message?.type === 'playResult') {
-        handlePlayResult(message);
-        return;
-      }
-
-      if (message?.type === 'release') {
-        const guildAssignments = assignments.get(message.guildId);
-        if (guildAssignments?.get(message.index)) {
-          guildAssignments.delete(message.index);
-          if (!guildAssignments.size) assignments.delete(message.guildId);
-        }
-      }
-    });
-
-    child.on('exit', (code, signal) => {
-      state.ready = false;
-      state.process = null;
-
-      if (shuttingDown) return;
-
-      state.restarts += 1;
-      logger.warn(
-        `[Usagi Music ${index}] worker exited (code=${code}, signal=${signal}); restarting in 5s.`,
-      );
-      setTimeout(spawn, 5000);
-    });
-  };
-
-  spawn();
-}
-
-let shuttingDown = false;
-
 // guildId -> Map(workerIndex -> voiceChannelId)
 const assignments = new Map();
-const pendingRoutes = new Map();
+const bots = new Map();
 
-function sendToWorker(index, payload) {
-  const worker = workers.get(index);
-  if (!worker?.ready || !worker.process?.connected) return false;
-  worker.process.send(payload);
-  return true;
-}
-
-function routePlayRequest(message) {
-  const { requestId, guildId, voiceChannelId } = message;
-  let guildAssignments = assignments.get(guildId);
-  if (!guildAssignments) {
-    guildAssignments = new Map();
-    assignments.set(guildId, guildAssignments);
-  }
-
-  // Same voice always keeps the same Music bot.
-  let selected = [...guildAssignments.entries()]
-    .find(([, channelId]) => channelId === voiceChannelId)?.[0];
-
-  // Otherwise choose the first ready bot not already serving another voice
-  // in this guild.
-  if (!selected) {
-    selected = [1, 2, 3].find(
-      (workerIndex) => workers.get(workerIndex)?.ready && !guildAssignments.has(workerIndex),
-    );
-  }
-
-  if (!selected) {
-    sendToWorker(1, {
-      type: 'routeResult',
-      requestId,
-      ok: false,
-      error: 'Cả 3 Usagi Music đều đang được sử dụng ở các phòng voice khác.',
-    });
-    return;
-  }
-
-  guildAssignments.set(selected, voiceChannelId);
-  pendingRoutes.set(requestId, { selected, guildId, voiceChannelId });
-
-  if (!sendToWorker(selected, { ...message, type: 'playOnWorker' })) {
-    guildAssignments.delete(selected);
-    pendingRoutes.delete(requestId);
-    sendToWorker(1, {
-      type: 'routeResult',
-      requestId,
-      ok: false,
-      error: `Usagi Music ${selected} chưa sẵn sàng. Hãy thử lại.`,
-    });
-  }
-}
-
-function handlePlayResult(message) {
-  const pending = pendingRoutes.get(message.requestId);
-  pendingRoutes.delete(message.requestId);
-
-  if (!message.ok && pending) {
-    const guildAssignments = assignments.get(pending.guildId);
-    if (guildAssignments?.get(pending.selected) === pending.voiceChannelId) {
-      guildAssignments.delete(pending.selected);
-      if (!guildAssignments.size) assignments.delete(pending.guildId);
+const coordinator = {
+  releaseAssignment(workerIndex, guildId) {
+    const guildAssignments = assignments.get(guildId);
+    if (guildAssignments?.get(workerIndex)) {
+      guildAssignments.delete(workerIndex);
+      if (!guildAssignments.size) assignments.delete(guildId);
+      logger.info(`[UsagiMusic Coordinator] Released bot ${workerIndex} from guild ${guildId}`);
     }
-  }
+  },
 
-  sendToWorker(1, {
-    type: 'routeResult',
-    requestId: message.requestId,
-    ok: message.ok,
-    embed: message.embed,
-    error: message.error,
-    workerIndex: message.index,
+  async handlePlayCommand(interaction) {
+    const voiceChannelId = interaction.member?.voice?.channel?.id;
+    if (!voiceChannelId) {
+      await interaction.reply({
+        content: 'Bạn cần vào một kênh voice trước.',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+    const guildId = interaction.guild.id;
+    let guildAssignments = assignments.get(guildId);
+    if (!guildAssignments) {
+      guildAssignments = new Map();
+      assignments.set(guildId, guildAssignments);
+    }
+
+    // Same voice always keeps the same Music bot
+    let selectedIndex = [...guildAssignments.entries()]
+      .find(([, channelId]) => channelId === voiceChannelId)?.[0];
+
+    // Otherwise choose the first ready bot not already serving another voice in this guild
+    if (!selectedIndex) {
+      selectedIndex = [1, 2, 3].find(
+        (idx) => bots.get(idx)?.ready && !guildAssignments.has(idx),
+      );
+    }
+
+    if (!selectedIndex) {
+      await interaction.editReply({
+        content: 'Cả 3 Usagi Music đều đang được sử dụng ở các phòng voice khác.',
+      }).catch(() => {});
+      return;
+    }
+
+    const selectedBot = bots.get(selectedIndex);
+    if (!selectedBot?.ready) {
+      await interaction.editReply({
+        content: `Usagi Music ${selectedIndex} chưa sẵn sàng. Hãy thử lại.`,
+      }).catch(() => {});
+      return;
+    }
+
+    guildAssignments.set(selectedIndex, voiceChannelId);
+
+    try {
+      const result = await selectedBot.executeRoutedPlay({
+        guildId,
+        voiceChannelId,
+        textChannelId: interaction.channel.id,
+        userId: interaction.user.id,
+        query: interaction.options.getString('query'),
+      });
+
+      await interaction.editReply({ embeds: [result.embed] }).catch(() => {});
+    } catch (error) {
+      if (guildAssignments.get(selectedIndex) === voiceChannelId) {
+        const player = selectedBot.riffy?.players?.get(guildId);
+        if (!player || !player.playing) {
+          guildAssignments.delete(selectedIndex);
+          if (!guildAssignments.size) assignments.delete(guildId);
+        }
+      }
+
+      const message = error?.userMessage || error?.message || 'Không thể phát bài hát.';
+      await interaction.editReply({ content: message }).catch(() => {});
+    }
+  },
+};
+
+// Start all 3 bots concurrently in this single Node.js process
+for (let i = 0; i < tokens.length; i++) {
+  const index = i + 1;
+  const bot = new UsagiMusicWorker(index, tokens[i], coordinator);
+  bots.set(index, bot);
+  bot.start().catch((err) => {
+    logger.error(`[Usagi Music ${index}] failed to start:`, err);
   });
 }
-
-tokens.forEach((token, i) => startWorker(i + 1, token));
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -175,18 +120,17 @@ const port = Number(process.env.PORT || 3000);
 app.get('/', (_req, res) => {
   res.json({
     status: 'online',
-    bots: [...workers.values()].map(({ index, ready, tag, restarts }) => ({
+    mode: 'single-process',
+    bots: [...bots.entries()].map(([index, bot]) => ({
       index,
-      ready,
-      tag,
-      restarts,
+      ready: bot.ready,
+      tag: bot.tag,
     })),
   });
 });
 
 app.get('/health', (_req, res) => {
-  const states = [...workers.values()];
-  const readyBots = states.filter((state) => state.ready).length;
+  const readyBots = [...bots.values()].filter((bot) => bot.ready).length;
   res.status(readyBots === 3 ? 200 : 503).json({
     status: readyBots === 3 ? 'healthy' : 'starting',
     readyBots,
@@ -195,16 +139,19 @@ app.get('/health', (_req, res) => {
 });
 
 const server = app.listen(port, '0.0.0.0', () => {
-  logger.info(`UsagiMusic controller listening on :${port}`);
+  logger.info(`UsagiMusic single-process controller listening on :${port}`);
 });
 
+let shuttingDown = false;
 async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info(`UsagiMusic controller shutting down (${signal})`);
 
-  for (const state of workers.values()) {
-    state.process?.kill('SIGTERM');
+  for (const bot of bots.values()) {
+    try {
+      bot.destroy();
+    } catch {}
   }
 
   server.close(() => process.exit(0));
