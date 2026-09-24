@@ -38,6 +38,10 @@ export class UsagiMusicWorker extends Client {
           interval: 3600,
           filter: () => (user) => user.id !== this.user?.id,
         },
+        guildMembers: {
+          interval: 1800,
+          filter: () => (member) => member.id !== this.user?.id,
+        },
       },
     });
 

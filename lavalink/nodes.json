@@ -19,12 +19,5 @@
     "password": "https://discord.gg/mjS5J2K3ep",
     "secure": true,
     "name": "MilloHost Backup"
-  },
-  {
-    "host": "127.0.0.1",
-    "port": 2333,
-    "password": "usagi-private-lavalink",
-    "secure": false,
-    "name": "Usagi Private"
   }
 ]
