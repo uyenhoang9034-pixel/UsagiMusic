@@ -708,7 +708,8 @@ export function setupPlayerHandler(
                     (player.node.__usagiPlaybackFailures || 0) + 1;
             }
 
-            const destinations = [...client.riffy.nodeMap.values()]
+            // Ưu tiên các node dự phòng khác, nếu không có thì thử ngay trên chính node hiện tại với nguồn thay thế
+            const alternativeNodes = [...client.riffy.nodeMap.values()]
                 .filter((node) =>
                     node.connected &&
                     node !== player.node &&
@@ -719,33 +720,41 @@ export function setupPlayerHandler(
                     (b.__usagiPlaybackFailures || 0)
                 );
 
+            const destinations = alternativeNodes.length > 0 ? alternativeNodes : (player.node ? [player.node] : []);
+
             let recovered = false;
             let lastError = null;
 
             for (const destination of destinations) {
                 try {
-                    logger.warn(
-                        `Playback failed on "${player.node?.name || 'unknown'}"; migrating ${guildId} to "${destination.name}".`,
-                    );
+                    if (destination !== player.node) {
+                        logger.warn(
+                            `Playback failed on "${player.node?.name || 'unknown'}"; migrating ${guildId} to "${destination.name}".`,
+                        );
 
-                    if (typeof player.moveTo === 'function') {
-                        await player.moveTo(destination);
-                    } else if (typeof player.changeNode === 'function') {
-                        await player.changeNode(destination);
-                    } else {
-                        player.node = destination;
+                        if (typeof player.moveTo === 'function') {
+                            await player.moveTo(destination);
+                        } else if (typeof player.changeNode === 'function') {
+                            await player.changeNode(destination);
+                        } else {
+                            player.node = destination;
+                        }
+
+                        // moveTo() preserves the old current track. Stop it before
+                        // starting a newly encoded replacement on this node.
+                        try {
+                            player.stop();
+                        } catch {}
                     }
 
-                    // moveTo() preserves the old current track. Stop it before
-                    // starting a newly encoded replacement on this node.
-                    try {
-                        player.stop();
-                    } catch {}
-
+                    const cleanTitle = title
+                        .replace(/(\(|\[)(official\s*(music)?\s*video|audio|mv|lyrics?|hd|4k|m\/v)(\)|\])/gi, '')
+                        .trim();
                     const queries = [
-                        `scsearch:${title} ${author}`.trim(),
-                        `ytmsearch:${title} ${author}`.trim(),
-                        `ytsearch:${title} ${author}`.trim(),
+                        `ytmsearch:${cleanTitle}`,
+                        `scsearch:${cleanTitle}`,
+                        `scsearch:${cleanTitle} ${author}`.trim(),
+                        `ytmsearch:${title}`,
                     ];
 
                     let replacement = null;

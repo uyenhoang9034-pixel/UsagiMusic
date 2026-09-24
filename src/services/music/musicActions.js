@@ -337,16 +337,41 @@ export async function joinVoiceChannel(client, interaction) {
   );
 }
 
+async function fetchYouTubeOEmbedTitle(url) {
+  try {
+    const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
+    const res = await fetch(oembedUrl, { signal: AbortSignal.timeout(4000) });
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        title: data.title || null,
+        author: data.author_name || '',
+      };
+    }
+  } catch {}
+  return null;
+}
+
 export async function playQuery(client, interaction, query) {
-  const cleanQuery = String(query || '').trim();
+  let cleanQuery = String(query || '').trim();
+
+  // Làm sạch các query YouTube Mix (&list=RD...) do YouTube chặn bot tải danh sách Mix tự động
+  if (/(?:youtube\.com|youtu\.be)/i.test(cleanQuery) && /[?&]list=RD/i.test(cleanQuery)) {
+    cleanQuery = cleanQuery
+      .replace(/([?&])list=RD[^&]*/i, '$1')
+      .replace(/([?&])start_radio=\d+/i, '$1')
+      .replace(/[?&]+$/, '')
+      .replace(/\?&/, '?');
+  }
 
   // Treat real collection URLs as playlists. Previously only YouTube
   // playlists were recognized, so Spotify album/playlist responses were
   // reduced to tracks[0].
   const isSoundCloudProfileTracks = SOUNDCLOUD_PROFILE_TRACKS_PATTERN.test(cleanQuery);
   const isSpotifyEpisode = SPOTIFY_EPISODE_PATTERN.test(cleanQuery);
+  const isYouTubeUrl = /(?:youtube\.com|youtu\.be)/i.test(cleanQuery);
   const isExplicitPlaylist =
-    /(?:[?&]list=|youtube\.com\/playlist)/i.test(cleanQuery) ||
+    (/(?:[?&]list=|youtube\.com\/playlist)/i.test(cleanQuery) && !/(?:[?&]list=RD)/i.test(cleanQuery)) ||
     /^https?:\/\/(?:open\.)?spotify\.com\/(?:intl-[^/]+\/)?(?:album|playlist)\//i.test(cleanQuery) ||
     isSoundCloudProfileTracks;
 
@@ -368,6 +393,48 @@ export async function playQuery(client, interaction, query) {
     result = await resolveSoundCloudProfileTracks(client, interaction, cleanQuery);
   } else if (isSpotifyEpisode) {
     result = await resolveSpotifyEpisodeFallback(client, interaction, cleanQuery);
+  } else if (isYouTubeUrl && !isExplicitPlaylist) {
+    // Với link YouTube video đơn lẻ:
+    // YouTube chặn IP datacenter khi stream trực tiếp từ URL video (lỗi 403 / bot detection).
+    // Ta lấy thông tin bài hát từ Lavalink resolve hoặc YouTube oEmbed, sau đó tìm bản stream
+    // chất lượng cao tương ứng qua YouTube Music (ytmsearch:) và SoundCloud (scsearch:)
+    let ytTrackInfo = null;
+
+    try {
+      const directResolve = await client.riffy.resolve({
+        query: cleanQuery,
+        requester: interaction.user,
+      });
+      if (Array.isArray(directResolve?.tracks) && directResolve.tracks.length > 0) {
+        ytTrackInfo = directResolve.tracks[0].info;
+      }
+    } catch {}
+
+    if (!ytTrackInfo?.title) {
+      ytTrackInfo = await fetchYouTubeOEmbedTitle(cleanQuery);
+    }
+
+    if (ytTrackInfo?.title) {
+      const cleanTitle = ytTrackInfo.title
+        .replace(/(\(|\[)(official\s*(music)?\s*video|audio|mv|lyrics?|hd|4k|m\/v)(\)|\])/gi, '')
+        .trim();
+      const searchQuery = `${cleanTitle} ${ytTrackInfo.author || ''}`.trim();
+
+      const searchPrefixes = ['ytmsearch:', 'scsearch:', ''];
+      for (const prefix of searchPrefixes) {
+        try {
+          const attempt = await client.riffy.resolve({
+            query: `${prefix}${searchQuery}`,
+            requester: interaction.user,
+          });
+          const hasTracks = Array.isArray(attempt?.tracks) && attempt.tracks.length > 0;
+          if (hasTracks) {
+            result = attempt;
+            break;
+          }
+        } catch {}
+      }
+    }
   }
 
   if (!result) {
