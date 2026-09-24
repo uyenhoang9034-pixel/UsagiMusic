@@ -728,7 +728,13 @@ export function setupPlayerHandler(
                         `Playback failed on "${player.node?.name || 'unknown'}"; migrating ${guildId} to "${destination.name}".`,
                     );
 
-                    await client.riffy.migrate(player, destination);
+                    if (typeof player.moveTo === 'function') {
+                        await player.moveTo(destination);
+                    } else if (typeof player.changeNode === 'function') {
+                        await player.changeNode(destination);
+                    } else {
+                        player.node = destination;
+                    }
 
                     // moveTo() preserves the old current track. Stop it before
                     // starting a newly encoded replacement on this node.

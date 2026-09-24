@@ -135,9 +135,23 @@ function assertBotVoicePermissions(channel) {
 }
 
 export async function startPlayback(player) {
-  // Riffy handles the normal initial Discord voice handshake itself.
-  // connectionRestored is a recovery event, so waiting for it here can make
-  // first playback time out even though the voice connection is healthy.
+  // Chờ quá trình bắt tay kết nối Voice và mã hóa DAVE protocol của Discord hoàn tất
+  // trước khi gửi lệnh play sang Lavalink, tránh lỗi 'Player connection is not initiated'.
+  if (!player.connected) {
+    const startTime = Date.now();
+    const timeoutMs = 8_000;
+    while (!player.connected && Date.now() - startTime < timeoutMs) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    if (!player.connected) {
+      throw new TitanBotError(
+        'Voice connection timeout',
+        ErrorTypes.CONFIGURATION,
+        'Không thể kết nối hoàn tất đến kênh voice của bạn trong thời gian cho phép. Hãy thử lại.',
+      );
+    }
+  }
+
   await player.play();
 }
 
@@ -346,11 +360,7 @@ export async function playQuery(client, interaction, query) {
 
   const { player } = await ensurePlayer(client, interaction);
 
-  // Search plain song names through Spotify first. LavaSrc supports
-  // spsearch and returns Spotify metadata; actual audio is mirrored through
-  // the configured playable providers. Direct URLs keep their native loader.
   const isUrl = /^https?:\/\//i.test(cleanQuery);
-  const resolveQuery = isUrl ? cleanQuery : `spsearch:${cleanQuery}`;
 
   let result;
 
@@ -361,18 +371,31 @@ export async function playQuery(client, interaction, query) {
   }
 
   if (!result) {
-    result = await client.riffy.resolve({
-      query: resolveQuery,
-      requester: interaction.user,
-    });
-  }
-
-  // Keep /play useful if Spotify search itself is temporarily unavailable.
-  if (!isUrl && (!Array.isArray(result?.tracks) || result.tracks.length === 0)) {
-    result = await client.riffy.resolve({
-      query: cleanQuery,
-      requester: interaction.user,
-    });
+    if (isUrl) {
+      result = await client.riffy.resolve({
+        query: cleanQuery,
+        requester: interaction.user,
+      });
+    } else {
+      // Ưu tiên nguồn stream trực tiếp không cần mirror: YouTube Music -> SoundCloud -> Spotify -> direct search
+      const searchPrefixes = ['ytmsearch:', 'scsearch:', 'spsearch:', ''];
+      for (const prefix of searchPrefixes) {
+        const queryToResolve = prefix ? `${prefix}${cleanQuery}` : cleanQuery;
+        try {
+          const attempt = await client.riffy.resolve({
+            query: queryToResolve,
+            requester: interaction.user,
+          });
+          const hasTracks = Array.isArray(attempt?.tracks) && attempt.tracks.length > 0;
+          if (hasTracks) {
+            result = attempt;
+            break;
+          }
+        } catch {
+          // Thử prefix tiếp theo nếu prefix hiện tại lỗi
+        }
+      }
+    }
   }
 
   const loadType = String(result?.loadType || '').toUpperCase();

@@ -12,8 +12,10 @@ server:
 lavalink:
   plugins:
     - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
+      repository: "https://maven.lavalink.dev/releases"
       snapshot: false
     - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.1"
+      repository: "https://maven.lavalink.dev/releases"
       snapshot: false
   server:
     password: "usagi-private-lavalink"
@@ -39,17 +41,19 @@ plugins:
     allowDirectPlaylistIds: true
     clients:
       - MUSIC
+      - ANDROID_VR
+      - ANDROID
+      - TVHTML5EMBEDDED
       - MWEB
       - WEB
       - WEBEMBEDDED
   lavasrc:
     providers:
-      - "yt-dlp:\"%ISRC%\""
-      - "scsearch:%QUERY%"
-      - "yt-dlp:%QUERY%"
       - "ytsearch:\"%ISRC%\""
       - "ytmsearch:%QUERY%"
       - "ytsearch:%QUERY%"
+      - "scsearch:%QUERY%"
+      - "ytdlpsearch:%QUERY%"
     sources:
       spotify: true
       applemusic: false

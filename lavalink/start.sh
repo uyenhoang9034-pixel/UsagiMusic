@@ -11,8 +11,8 @@ cd /app/lavalink
 # - MinHeapFreeRatio/MaxHeapFreeRatio ensures heap is reclaimed proactively
 java -XX:+UseSerialGC \
      -Xss256k \
-     -Xms32m \
-     -Xmx128m \
+     -Xms64m \
+     -Xmx256m \
      -XX:CICompilerCount=2 \
      -XX:MinHeapFreeRatio=5 \
      -XX:MaxHeapFreeRatio=10 \
@@ -26,7 +26,7 @@ echo "[UsagiMusic] Waiting for Lavalink..."
 i=0
 until curl -fsS -H "Authorization: usagi-private-lavalink" http://127.0.0.1:2333/version >/dev/null 2>&1; do
   i=$((i + 1))
-  if [ "$i" -ge 60 ]; then
+  if [ "$i" -ge 75 ]; then
     echo "[UsagiMusic] Lavalink did not become ready in time."
     exit 1
   fi
