@@ -18,10 +18,13 @@ Một repo chạy 3 bot nhạc Discord dùng chung 1 tiến trình Node.js duy n
 ## Biến môi trường
 
 ```env
-# 3 Token của 3 Discord Bot (Bắt buộc)
+# Token của Discord Bot (MUSIC_BOT_1_TOKEN là bắt buộc, BOT 2 & 3 là tùy chọn)
 MUSIC_BOT_1_TOKEN=
 MUSIC_BOT_2_TOKEN=
 MUSIC_BOT_3_TOKEN=
+
+# Tùy chọn tạm tắt Bot 3 để ép RAM xuống mức siêu thấp (~55MB):
+DISABLE_BOT_3=true
 
 # Cổng Express server (Railway tự cấp)
 PORT=3000

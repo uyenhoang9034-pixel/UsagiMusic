@@ -4,18 +4,37 @@ import { MessageFlags } from 'discord.js';
 import { logger } from './utils/logger.js';
 import { UsagiMusicWorker } from './worker.js';
 
-const tokens = [
-  process.env.MUSIC_BOT_1_TOKEN,
-  process.env.MUSIC_BOT_2_TOKEN,
-  process.env.MUSIC_BOT_3_TOKEN,
+const isBot3Disabled =
+  process.env.DISABLE_BOT_3 === 'true' ||
+  process.env.ENABLE_BOT_3 === 'false';
+
+const tokenConfigs = [
+  { index: 1, token: process.env.MUSIC_BOT_1_TOKEN, required: true },
+  { index: 2, token: process.env.MUSIC_BOT_2_TOKEN, required: false },
+  { index: 3, token: isBot3Disabled ? null : process.env.MUSIC_BOT_3_TOKEN, required: false },
 ];
 
-if (tokens.some((token) => !String(token || '').trim())) {
-  throw new Error('Set MUSIC_BOT_1_TOKEN, MUSIC_BOT_2_TOKEN and MUSIC_BOT_3_TOKEN.');
+const activeTokens = tokenConfigs.filter((cfg) => {
+  const val = String(cfg.token || '').trim();
+  if (!val && cfg.required) {
+    throw new Error('MUSIC_BOT_1_TOKEN is required as the primary music controller.');
+  }
+  return Boolean(val);
+});
+
+if (activeTokens.length === 0) {
+  throw new Error('No music bot tokens configured. Set at least MUSIC_BOT_1_TOKEN.');
 }
 
-if (new Set(tokens).size !== 3) {
-  throw new Error('The three MUSIC_BOT_*_TOKEN values must belong to three different bots.');
+const tokenValues = activeTokens.map((t) => t.token);
+if (new Set(tokenValues).size !== tokenValues.length) {
+  throw new Error('The configured MUSIC_BOT_*_TOKEN values must belong to different bots.');
+}
+
+if (isBot3Disabled) {
+  logger.info('[UsagiMusic Coordinator] Bot 3 is explicitly disabled (DISABLE_BOT_3=true). Running with Bot 1 & 2.');
+} else {
+  logger.info(`[UsagiMusic Coordinator] Active workers configured: ${activeTokens.map((t) => `Bot ${t.index}`).join(', ')}`);
 }
 
 // guildId -> Map(workerIndex -> voiceChannelId)
@@ -57,14 +76,14 @@ const coordinator = {
 
     // Otherwise choose the first ready bot not already serving another voice in this guild
     if (!selectedIndex) {
-      selectedIndex = [1, 2, 3].find(
+      selectedIndex = [...bots.keys()].find(
         (idx) => bots.get(idx)?.ready && !guildAssignments.has(idx),
       );
     }
 
     if (!selectedIndex) {
       await interaction.editReply({
-        content: 'Cả 3 Usagi Music đều đang được sử dụng ở các phòng voice khác.',
+        content: `Cả ${bots.size} Usagi Music đều đang được sử dụng ở các phòng voice khác.`,
       }).catch(() => {});
       return;
     }
@@ -104,15 +123,46 @@ const coordinator = {
   },
 };
 
-// Start all 3 bots concurrently in this single Node.js process
-for (let i = 0; i < tokens.length; i++) {
-  const index = i + 1;
-  const bot = new UsagiMusicWorker(index, tokens[i], coordinator);
+// Start all configured bots concurrently in this single Node.js process
+for (const { index, token } of activeTokens) {
+  const bot = new UsagiMusicWorker(index, token, coordinator);
   bots.set(index, bot);
   bot.start().catch((err) => {
     logger.error(`[Usagi Music ${index}] failed to start:`, err);
   });
 }
+
+function getMemoryStats() {
+  const m = process.memoryUsage();
+  return {
+    rss: `${(m.rss / 1024 / 1024).toFixed(1)} MB`,
+    heapUsed: `${(m.heapUsed / 1024 / 1024).toFixed(1)} MB`,
+    heapTotal: `${(m.heapTotal / 1024 / 1024).toFixed(1)} MB`,
+    external: `${(m.external / 1024 / 1024).toFixed(1)} MB`,
+  };
+}
+
+// Periodic garbage collection & memory monitoring (every 10 minutes)
+setInterval(() => {
+  if (global.gc) {
+    try {
+      global.gc();
+    } catch {}
+  }
+  const mem = getMemoryStats();
+  logger.info(`[Memory Monitor] RSS: ${mem.rss} | Heap: ${mem.heapUsed} / ${mem.heapTotal}`);
+}, 10 * 60 * 1000).unref();
+
+// Run an initial GC cleanup 15 seconds after boot once bots are connected
+setTimeout(() => {
+  if (global.gc) {
+    try {
+      global.gc();
+      const mem = getMemoryStats();
+      logger.info(`[Startup GC] All ${bots.size} bot(s) ready. Baseline RAM: RSS ${mem.rss} | Heap ${mem.heapUsed}`);
+    } catch {}
+  }
+}, 15000).unref();
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
@@ -121,6 +171,8 @@ app.get('/', (_req, res) => {
   res.json({
     status: 'online',
     mode: 'single-process',
+    activeBotsCount: bots.size,
+    memory: getMemoryStats(),
     bots: [...bots.entries()].map(([index, bot]) => ({
       index,
       ready: bot.ready,
@@ -130,11 +182,15 @@ app.get('/', (_req, res) => {
 });
 
 app.get('/health', (_req, res) => {
+  const totalBots = bots.size;
   const readyBots = [...bots.values()].filter((bot) => bot.ready).length;
-  res.status(readyBots === 3 ? 200 : 503).json({
-    status: readyBots === 3 ? 'healthy' : 'starting',
+  const isHealthy = totalBots > 0 && readyBots === totalBots;
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? 'healthy' : 'starting',
     readyBots,
-    totalBots: 3,
+    totalBots,
+    activeWorkers: [...bots.keys()],
+    memory: getMemoryStats(),
   });
 });
 

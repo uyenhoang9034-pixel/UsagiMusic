@@ -657,6 +657,12 @@ export function setupPlayerHandler(
                     player.guildId,
                     client,
                 );
+
+                if (global.gc) {
+                    try {
+                        global.gc();
+                    } catch {}
+                }
             } catch (error) {
                 logger.error(
                     'Music playerDisconnect error:',
