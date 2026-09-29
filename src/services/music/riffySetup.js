@@ -15,20 +15,24 @@ export function initializeMusic(client) {
 
     client.riffy = new Riffy(client, lavalinkConfig.nodes, {
         send: (payload) => {
-            const guildId = payload.d?.guild_id;
-            if (!guildId) {
-                return;
-            }
+            try {
+                const guildId = payload.d?.guild_id;
+                if (!guildId) {
+                    return;
+                }
 
-            const guild = client.guilds.cache.get(guildId);
-            if (guild?.shard) {
-                guild.shard.send(payload);
-                return;
-            }
+                const guild = client.guilds.cache.get(guildId);
+                if (guild?.shard) {
+                    guild.shard.send(payload);
+                    return;
+                }
 
-            const shardCount = client.ws.shards.size || 1;
-            const shardId = Number((BigInt(guildId) >> 22n) % BigInt(shardCount));
-            client.ws.shards.get(shardId)?.send(payload);
+                const shardCount = client.ws.shards.size || 1;
+                const shardId = Number((BigInt(guildId) >> 22n) % BigInt(shardCount));
+                client.ws.shards.get(shardId)?.send(payload);
+            } catch (err) {
+                logger.error('Failed to send voice payload to Discord gateway:', err);
+            }
         },
         defaultSearchPlatform: lavalinkConfig.defaultSearchPlatform,
         restVersion: lavalinkConfig.restVersion,
@@ -138,9 +142,11 @@ export function initializeMusic(client) {
     client.on('raw', (packet) => {
         if (
             ![
+                'VOICE_STATE_UPDATE',
+                'VOICE_SERVER_UPDATE',
                 GatewayDispatchEvents.VoiceStateUpdate,
                 GatewayDispatchEvents.VoiceServerUpdate,
-            ].includes(packet.t)
+            ].includes(packet?.t)
         ) {
             return;
         }

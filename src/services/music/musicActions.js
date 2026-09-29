@@ -154,24 +154,49 @@ function assertBotVoicePermissions(channel) {
 }
 
 export async function startPlayback(player) {
-  // Chờ quá trình bắt tay kết nối Voice và mã hóa DAVE protocol của Discord hoàn tất
-  // trước khi gửi lệnh play sang Lavalink, tránh lỗi 'Player connection is not initiated'.
-  if (!player.connected) {
-    const startTime = Date.now();
-    const timeoutMs = 8_000;
-    while (!player.connected && Date.now() - startTime < timeoutMs) {
-      await new Promise((resolve) => setTimeout(resolve, 150));
-    }
-    if (!player.connected) {
-      throw new TitanBotError(
-        'Voice connection timeout',
-        ErrorTypes.CONFIGURATION,
-        'Không thể kết nối hoàn tất đến kênh voice của bạn trong thời gian cho phép. Hãy thử lại.',
-      );
-    }
+  const riffy = player.riffy;
+
+  // Chờ quá trình bắt tay kết nối Voice của Discord hoàn tất
+  const startTime = Date.now();
+  const timeoutMs = 8_000;
+  while (!player.connected && Date.now() - startTime < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
   }
 
-  await player.play();
+  try {
+    await player.play();
+  } catch (error) {
+    logger.warn(`Playback failed on node "${player.node?.name}": ${error?.message || error}. Attempting migration...`);
+
+    // Tự động chuyển player sang node dự phòng khác trong cluster nếu node hiện tại bị từ chối voice
+    const alternativeNodes = [...(riffy?.nodeMap?.values() || [])].filter(
+      (n) => n.connected && n !== player.node,
+    );
+
+    let played = false;
+    for (const altNode of alternativeNodes) {
+      try {
+        logger.info(`Migrating player ${player.guildId} to "${altNode.name}" and retrying play...`);
+        if (typeof player.moveTo === 'function') {
+          await player.moveTo(altNode);
+        } else {
+          player.node = altNode;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await player.play();
+        played = true;
+        break;
+      } catch (altError) {
+        logger.warn(`Playback on alternate node "${altNode.name}" failed: ${altError?.message || altError}`);
+      }
+    }
+
+    if (!played) {
+      // Dọn dẹp session lỗi để lần /play kế tiếp không bị dính player cũ
+      try { player.destroy(); } catch {}
+      throw error;
+    }
+  }
 }
 
 export function getPlayer(client, guildId) {
@@ -287,10 +312,13 @@ export async function ensurePlayer(client, interaction) {
     player = null;
   }
 
-  // A Riffy Player can remain in the players map after its Discord voice
-  // Connection was destroyed/disconnected. Reusing that stale Player makes
-  // player.play() throw "Player connection is not initiated". Only replace
-  // that broken session; healthy existing players/queues are left untouched.
+  // Nếu player trước đó bị lỗi kết nối hoặc không còn chơi nhạc và chưa connected:
+  // Hủy session cũ để tạo kết nối mới tinh, không bị lỗi 'Player connection is not initiated'
+  if (player && (!player.connected || !player.voiceChannel) && !player.playing) {
+    try { player.destroy(); } catch {}
+    player = null;
+  }
+
   if (player && !player.connection) {
     try { player.destroy(); } catch {}
     player = null;

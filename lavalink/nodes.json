@@ -1,19 +1,5 @@
 [
   {
-    "host": "lava-v4.millohost.my.id",
-    "port": 443,
-    "password": "https://discord.gg/mjS5J2K3ep",
-    "secure": true,
-    "name": "MilloHost Primary"
-  },
-  {
-    "host": "lavalink-v4.triniumhost.com",
-    "port": 443,
-    "password": "free",
-    "secure": true,
-    "name": "TriniumHost"
-  },
-  {
     "host": "nodelink.triniumhost.com",
     "port": 443,
     "password": "free",
@@ -28,10 +14,24 @@
     "name": "Trinium Nodelink 2"
   },
   {
+    "host": "lavalink-v4.triniumhost.com",
+    "port": 443,
+    "password": "free",
+    "secure": true,
+    "name": "TriniumHost"
+  },
+  {
     "host": "lavalinkv4.serenetia.com",
     "port": 443,
     "password": "https://dsc.gg/ajidevserver",
     "secure": true,
     "name": "Serenetia Backup"
+  },
+  {
+    "host": "lava-v4.millohost.my.id",
+    "port": 443,
+    "password": "https://discord.gg/mjS5J2K3ep",
+    "secure": true,
+    "name": "MilloHost Backup"
   }
 ]
