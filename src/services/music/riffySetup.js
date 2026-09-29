@@ -32,6 +32,8 @@ export function initializeMusic(client) {
         },
         defaultSearchPlatform: lavalinkConfig.defaultSearchPlatform,
         restVersion: lavalinkConfig.restVersion,
+        reconnectTimeout: 5000,
+        reconnectTries: Infinity,
         bypassChecks: {
             nodeFetchInfo: true,
         },
@@ -156,5 +158,30 @@ export function initRiffyAfterReady(client) {
     if (client.riffy && client.user?.id) {
         client.riffy.init(client.user.id);
         logger.info('Riffy voice connection manager initialized.');
+
+        // Node watchdog: Ensures nodes are never permanently lost if destroyed by unexpected errors
+        const watchdogTimer = setInterval(() => {
+            if (!client.riffy || !client.user?.id) return;
+
+            for (const nodeConfig of lavalinkConfig.nodes) {
+                const nodeKey = nodeConfig.name || nodeConfig.host;
+                const existingNode = client.riffy.nodeMap.get(nodeKey);
+
+                if (!existingNode) {
+                    logger.warn(`[Node Watchdog] Node "${nodeKey}" missing from nodeMap, restoring...`);
+                    try {
+                        client.riffy.createNode(nodeConfig);
+                    } catch (e) {
+                        logger.error(`[Node Watchdog] Failed to restore node "${nodeKey}":`, e);
+                    }
+                } else if (!existingNode.connected && !existingNode.reconnectAttempt) {
+                    logger.info(`[Node Watchdog] Triggering reconnect for idle disconnected node "${nodeKey}"...`);
+                    try {
+                        existingNode.connect();
+                    } catch {}
+                }
+            }
+        }, 60_000);
+        watchdogTimer.unref();
     }
 }

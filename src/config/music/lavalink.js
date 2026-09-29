@@ -161,14 +161,14 @@ export function getLavalinkNodes() {
     return fromEnv;
   }
 
-  if (process.env.LAVALINK_HOST?.trim()) {
-    return [buildNodeFromSingleEnv()];
-  }
-
   const fromFile = loadNodesFromFile();
 
   if (fromFile?.length) {
     return fromFile;
+  }
+
+  if (process.env.LAVALINK_HOST?.trim()) {
+    return [buildNodeFromSingleEnv()];
   }
 
   return [buildNodeFromSingleEnv()];

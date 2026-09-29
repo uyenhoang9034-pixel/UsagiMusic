@@ -101,8 +101,27 @@ function getConnectedLavalinkNodes(client) {
   return [...client.riffy.nodeMap.values()].filter((node) => node.connected);
 }
 
-export function assertLavalinkNodeAvailable(client) {
+export async function assertLavalinkNodeAvailable(client, timeoutMs = 4000) {
+  if (getConnectedLavalinkNodes(client).length > 0) {
+    return;
+  }
+
+  // Chờ nếu các node đang trong quá trình bắt tay kết nối WebSocket hoặc reconnect
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    if (getConnectedLavalinkNodes(client).length > 0) {
+      return;
+    }
+  }
+
   if (!getConnectedLavalinkNodes(client).length) {
+    for (const node of client.riffy?.nodeMap?.values() || []) {
+      if (!node.connected && !node.reconnectAttempt) {
+        try { node.connect(); } catch {}
+      }
+    }
+
     throw new TitanBotError(
       'Lavalink unavailable',
       ErrorTypes.CONFIGURATION,
@@ -252,7 +271,7 @@ function isDuplicateTrack(player, track) {
 
 export async function ensurePlayer(client, interaction) {
   assertRiffyAvailable(client);
-  assertLavalinkNodeAvailable(client);
+  await assertLavalinkNodeAvailable(client);
   assertInVoice(interaction.member);
 
   const guildId = interaction.guild.id;
