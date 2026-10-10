@@ -178,36 +178,39 @@ export function buildQueueEmbed(queue, currentTrack, page = 0) {
     });
 }
 
-export function buildPlayerButtonRows(player, guildData) {
+export function buildPlayerButtonRows(player, guildData, options = {}) {
     const paused = player?.paused;
+    const heartEmoji = options?.fallbackEmojis ? '💖' : BUTTON_HEART;
+    const volEmoji = options?.fallbackEmojis ? '🔊' : BUTTON_VOLUME;
+
     const row1 = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(MUSIC_BUTTON_IDS.PAUSE)
             .setLabel('Pause')
             .setStyle(ButtonStyle.Primary)
-            .setEmoji(BUTTON_HEART)
+            .setEmoji(heartEmoji)
             .setDisabled(Boolean(paused)),
         new ButtonBuilder()
             .setCustomId(MUSIC_BUTTON_IDS.RESUME)
             .setLabel('Resume')
             .setStyle(ButtonStyle.Success)
-            .setEmoji(BUTTON_HEART)
+            .setEmoji(heartEmoji)
             .setDisabled(!paused),
         new ButtonBuilder()
             .setCustomId(MUSIC_BUTTON_IDS.SKIP)
             .setLabel('Skip')
             .setStyle(ButtonStyle.Secondary)
-            .setEmoji(BUTTON_HEART),
+            .setEmoji(heartEmoji),
         new ButtonBuilder()
             .setCustomId(MUSIC_BUTTON_IDS.STOP)
             .setLabel('Stop')
             .setStyle(ButtonStyle.Danger)
-            .setEmoji(BUTTON_HEART),
+            .setEmoji(heartEmoji),
         new ButtonBuilder()
             .setCustomId(MUSIC_BUTTON_IDS.SHUFFLE)
             .setLabel('Shuffle')
             .setStyle(guildData?.shuffle ? ButtonStyle.Success : ButtonStyle.Secondary)
-            .setEmoji(BUTTON_HEART),
+            .setEmoji(heartEmoji),
     );
 
     const row2 = new ActionRowBuilder().addComponents(
@@ -215,22 +218,22 @@ export function buildPlayerButtonRows(player, guildData) {
             .setCustomId(MUSIC_BUTTON_IDS.LOOP)
             .setLabel('Loop')
             .setStyle(guildData?.loop !== 'none' ? ButtonStyle.Success : ButtonStyle.Secondary)
-            .setEmoji(BUTTON_HEART),
+            .setEmoji(heartEmoji),
         new ButtonBuilder()
             .setCustomId(MUSIC_BUTTON_IDS.VOL_DOWN)
             .setLabel('Vol -')
             .setStyle(ButtonStyle.Secondary)
-            .setEmoji(BUTTON_VOLUME),
+            .setEmoji(volEmoji),
         new ButtonBuilder()
             .setCustomId(MUSIC_BUTTON_IDS.VOL_UP)
             .setLabel('Vol +')
             .setStyle(ButtonStyle.Secondary)
-            .setEmoji(BUTTON_VOLUME),
+            .setEmoji(volEmoji),
         new ButtonBuilder()
             .setCustomId(MUSIC_BUTTON_IDS.QUEUE)
             .setLabel('Queue')
             .setStyle(ButtonStyle.Secondary)
-            .setEmoji(BUTTON_HEART),
+            .setEmoji(heartEmoji),
     );
 
     return [row1, row2];

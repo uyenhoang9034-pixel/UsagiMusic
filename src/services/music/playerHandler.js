@@ -28,15 +28,15 @@ async function editOrSendPlayerMessage(
     channelId,
     embed,
     components,
+    player = null,
 ) {
     if (!channelId) {
         return;
     }
 
     const channel =
-        client.channels.cache.get(
-            channelId,
-        );
+        client.channels.cache.get(channelId) ||
+        await client.channels.fetch(channelId).catch(() => null);
 
     if (!channel) {
         guildData.playerMessageId = null;
@@ -94,6 +94,18 @@ async function editOrSendPlayerMessage(
             'Failed to send music player message:',
             error,
         );
+
+        // Fallback: If custom emojis fail (Unknown Emoji 10014 or Invalid Form Body 50035), retry with standard emojis
+        if (player && (error?.code === 50035 || error?.code === 10014 || String(error?.message).includes('emoji'))) {
+            try {
+                const safeComponents = buildPlayerButtonRows(player, guildData, { fallbackEmojis: true });
+                const newMsg = await channel.send({ embeds: [embed], components: safeComponents });
+                guildData.playerMessageId = newMsg.id;
+                guildData.playerChannelId = channel.id;
+            } catch (fallbackError) {
+                logger.error('Failed to send fallback music player message:', fallbackError);
+            }
+        }
     }
 }
 
@@ -149,6 +161,7 @@ export async function refreshPlayerMessage(
             channelId,
             embed,
             components,
+            player,
         );
     } catch (error) {
         logger.error(
@@ -440,6 +453,7 @@ export function setupPlayerHandler(
                     channelId,
                     embed,
                     components,
+                    player,
                 );
 
                 startUpdateInterval(

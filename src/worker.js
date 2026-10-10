@@ -76,12 +76,19 @@ export class UsagiMusicWorker extends Client {
           if (!handler) return;
 
           if (interaction.guild && interaction.user?.id) {
-            const member = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
-            if (member) {
-              Object.defineProperty(interaction, 'member', {
-                value: member,
-                configurable: true,
-              });
+            let member = interaction.member;
+            if (!member || !member.voice?.channel) {
+              const fetched = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+              if (fetched) {
+                const voiceState = interaction.guild.voiceStates.cache.get(interaction.user.id);
+                if (voiceState) {
+                  Object.defineProperty(fetched, 'voice', { value: voiceState, configurable: true });
+                }
+                Object.defineProperty(interaction, 'member', {
+                  value: fetched,
+                  configurable: true,
+                });
+              }
             }
           }
 
@@ -135,6 +142,19 @@ export class UsagiMusicWorker extends Client {
 
     if (!voiceChannel || !textChannel || !member || !user) {
       throw new Error('Không lấy được thông tin voice/người dùng. Hãy thử lại.');
+    }
+
+    // Ensure member.voice.channel is available for voice / permission checks
+    if (!member.voice || !member.voice.channel) {
+      const existingVoice = member.voice || {};
+      Object.defineProperty(member, 'voice', {
+        value: {
+          ...existingVoice,
+          channel: voiceChannel,
+          channelId: voiceChannelId,
+        },
+        configurable: true,
+      });
     }
 
     // Keep the real GuildMember. Spreading it into a plain object drops

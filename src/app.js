@@ -76,9 +76,10 @@ const coordinator = {
 
     // Otherwise choose the first ready bot not already serving another voice in this guild
     if (!selectedIndex) {
-      selectedIndex = [...bots.keys()].find(
-        (idx) => bots.get(idx)?.ready && !guildAssignments.has(idx),
-      );
+      selectedIndex = [...bots.keys()].find((idx) => {
+        const b = bots.get(idx);
+        return b?.ready && !guildAssignments.has(idx) && (b.guilds.cache.has(guildId) || idx === 1);
+      });
     }
 
     if (!selectedIndex) {
@@ -167,18 +168,228 @@ setTimeout(() => {
 const app = express();
 const port = Number(process.env.PORT || 3000);
 
-app.get('/', (_req, res) => {
-  res.json({
+app.get('/', (req, res) => {
+  const wantsJson = req.query.json === 'true' || req.headers.accept?.includes('application/json');
+  const data = {
     status: 'online',
     mode: 'single-process',
     activeBotsCount: bots.size,
     memory: getMemoryStats(),
+    uptime: Math.floor(process.uptime()),
     bots: [...bots.entries()].map(([index, bot]) => ({
       index,
       ready: bot.ready,
-      tag: bot.tag,
+      tag: bot.tag || 'Connecting...',
     })),
-  });
+  };
+
+  if (wantsJson) {
+    return res.json(data);
+  }
+
+  const botCards = data.bots.map((b) => `
+    <div class="bot-card">
+      <div class="bot-header">
+        <span class="bot-badge ${b.ready ? 'ready' : 'starting'}">${b.ready ? 'ONLINE' : 'CONNECTING'}</span>
+        <span class="bot-name">Usagi Music ${b.index}</span>
+      </div>
+      <div class="bot-tag">${b.tag}</div>
+    </div>
+  `).join('');
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Usagi Music · Live Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f1015;
+      --card-bg: rgba(26, 28, 38, 0.7);
+      --card-border: rgba(255, 183, 213, 0.15);
+      --pink: #ffb7d5;
+      --pink-glow: rgba(255, 183, 213, 0.35);
+      --text: #e6e8ee;
+      --text-muted: #8c90a4;
+      --success: #6be28e;
+      --warning: #f7b955;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: radial-gradient(circle at 50% 0%, #201a28, var(--bg));
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 30px 16px;
+    }
+    .container {
+      width: 100%;
+      max-width: 720px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .header {
+      text-align: center;
+      padding: 20px 0;
+    }
+    .title {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--pink);
+      text-shadow: 0 0 24px var(--pink-glow);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    .subtitle {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      margin-top: 6px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+    }
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 183, 213, 0.3);
+    }
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+    }
+    .stat-val {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--pink);
+    }
+    .bots-section {
+      background: var(--card-bg);
+      backdrop-filter: blur(14px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 22px;
+    }
+    .section-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 14px;
+      color: var(--pink);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .bots-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .bot-card {
+      background: rgba(15, 16, 21, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      padding: 14px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .bot-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .bot-name {
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    .bot-tag {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
+    .bot-badge {
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 20px;
+    }
+    .bot-badge.ready {
+      background: rgba(107, 226, 142, 0.15);
+      color: var(--success);
+      border: 1px solid rgba(107, 226, 142, 0.3);
+    }
+    .bot-badge.starting {
+      background: rgba(247, 185, 85, 0.15);
+      color: var(--warning);
+      border: 1px solid rgba(247, 185, 85, 0.3);
+    }
+    .footer {
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="title">🐰 𝓤𝓼𝓪𝓰𝓲 𝓜𝓾𝓼𝓲𝓬</div>
+      <div class="subtitle">Single-Process Architecture · Optimized for Railway Hobby</div>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <div class="stat-label">RAM Consumption (RSS)</div>
+        <div class="stat-val">${data.memory.rss}</div>
+      </div>
+      <div class="card">
+        <div class="stat-label">V8 Heap Memory</div>
+        <div class="stat-val">${data.memory.heapUsed}</div>
+      </div>
+      <div class="card">
+        <div class="stat-label">Active Workers</div>
+        <div class="stat-val">${data.activeBotsCount} Bot(s)</div>
+      </div>
+    </div>
+    <div class="bots-section">
+      <div class="section-title">
+        <span>Workers Status</span>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">Auto-refreshing</span>
+      </div>
+      <div class="bots-list">
+        ${botCards}
+      </div>
+    </div>
+    <div class="footer">
+      Designed with 💖 by Usagi múp rụp cho vợ của Kim Nong
+    </div>
+  </div>
+  <script>
+    setTimeout(() => window.location.reload(), 10000);
+  </script>
+</body>
+</html>`);
 });
 
 app.get('/health', (_req, res) => {
