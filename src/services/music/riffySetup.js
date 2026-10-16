@@ -5,7 +5,50 @@ import lavalinkConfig from '../../config/music/lavalink.js';
 import { setupPlayerHandler } from './playerHandler.js';
 
 const require = createRequire(import.meta.url);
-const { Riffy } = require('riffy');
+const { Riffy, Node } = require('riffy');
+
+// Patch Riffy Node to guarantee that all underlying WebSockets ALWAYS have
+// an 'error' event listener attached. This prevents Node.js from throwing
+// "Unhandled 'error' event" and crashing Railway when a Lavalink node drops
+// or times out during connection/reconnection.
+if (Node?.prototype) {
+    const wsSymbol = Symbol('usagi_riffy_ws');
+    Object.defineProperty(Node.prototype, 'ws', {
+        get() {
+            return this[wsSymbol] || null;
+        },
+        set(newWs) {
+            this[wsSymbol] = newWs;
+            if (newWs && typeof newWs.on === 'function') {
+                newWs.on('error', (err) => {
+                    logger.debug?.(`[Riffy WebSocket] Caught socket error on node "${this.name}":`, err?.message || err);
+                });
+
+                const origRemoveAll = newWs.removeAllListeners.bind(newWs);
+                newWs.removeAllListeners = (event) => {
+                    const res = origRemoveAll(event);
+                    if (!event || event === 'error') {
+                        newWs.on('error', () => {});
+                    }
+                    return res;
+                };
+            }
+        },
+        configurable: true,
+        enumerable: true,
+    });
+
+    if (typeof Node.prototype.connect === 'function') {
+        const originalNodeConnect = Node.prototype.connect;
+        Node.prototype.connect = function (...args) {
+            try {
+                return originalNodeConnect.apply(this, args);
+            } catch (err) {
+                logger.warn(`[Riffy Node] Error initiating connect for "${this.name}":`, err?.message || err);
+            }
+        };
+    }
+}
 
 export function initializeMusic(client) {
     if (!lavalinkConfig.nodes?.length) {
@@ -157,6 +200,10 @@ export function initializeMusic(client) {
         logger.error(`Music player error in guild ${player.guildId}:`, error);
     });
 
+    client.riffy.on('error', (error) => {
+        logger.warn('[Riffy Client Error]:', error?.message || error);
+    });
+
     logger.info(`Music initialized with ${lavalinkConfig.nodes.length} Lavalink node(s).`);
 }
 
@@ -180,11 +227,18 @@ export function initRiffyAfterReady(client) {
                     } catch (e) {
                         logger.error(`[Node Watchdog] Failed to restore node "${nodeKey}":`, e);
                     }
-                } else if (!existingNode.connected && !existingNode.reconnectAttempt) {
-                    logger.info(`[Node Watchdog] Triggering reconnect for idle disconnected node "${nodeKey}"...`);
-                    try {
-                        existingNode.connect();
-                    } catch {}
+                } else if (!existingNode.connected) {
+                    const wsState = existingNode.ws?.readyState;
+                    // ws.CONNECTING is 0, ws.OPEN is 1
+                    const isConnectingOrOpen = wsState === 0 || wsState === 1;
+                    if (!isConnectingOrOpen && !existingNode.reconnectAttempt) {
+                        logger.info(`[Node Watchdog] Triggering reconnect for idle disconnected node "${nodeKey}"...`);
+                        try {
+                            existingNode.connect();
+                        } catch (e) {
+                            logger.warn(`[Node Watchdog] Failed to reconnect node "${nodeKey}":`, e?.message || e);
+                        }
+                    }
                 }
             }
         }, 60_000);

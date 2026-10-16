@@ -60,6 +60,14 @@ export class UsagiMusicWorker extends Client {
   }
 
   setupListeners() {
+    this.on('error', (error) => {
+      logger.error(`[Usagi Music ${this.workerIndex}] Discord client error:`, error);
+    });
+
+    this.on('shardError', (error, shardId) => {
+      logger.warn(`[Usagi Music ${this.workerIndex}] Shard ${shardId} error:`, error);
+    });
+
     this.on('interactionCreate', async (interaction) => {
       try {
         if (interaction.isChatInputCommand() && interaction.commandName === 'play') {

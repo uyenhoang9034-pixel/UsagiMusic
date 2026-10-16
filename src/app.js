@@ -4,6 +4,15 @@ import { MessageFlags } from 'discord.js';
 import { logger } from './utils/logger.js';
 import { UsagiMusicWorker } from './worker.js';
 
+// Process-level anti-crash protection for Railway deployment
+process.on('uncaughtException', (err, origin) => {
+  logger.error(`[Anti-Crash] Uncaught Exception (${origin}):`, err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('[Anti-Crash] Unhandled Promise Rejection at:', promise, 'reason:', reason);
+});
+
 const isBot3Disabled =
   process.env.DISABLE_BOT_3 === 'true' ||
   process.env.ENABLE_BOT_3 === 'false';
