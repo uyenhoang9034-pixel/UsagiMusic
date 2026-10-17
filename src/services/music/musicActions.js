@@ -33,6 +33,7 @@ const YOUTUBE_URL_PATTERN = /(?:youtube\.com|youtu\.be)/i;
 const SPOTIFY_EPISODE_PATTERN = /^https?:\/\/(?:open\.)?spotify\.com\/(?:intl-[^/]+\/)?episode\/([^?/#]+)/i;
 const SOUNDCLOUD_PROFILE_TRACKS_PATTERN = /^https?:\/\/(?:www\.)?soundcloud\.com\/([^/?#]+)\/(?:tracks|popular-tracks)\/?(?:[?#].*)?$/i;
 const SPECIAL_URL_MAX_TRACKS = 100;
+const MAX_PLAYLIST_TRACKS = 100;
 const PLAYER_CONNECT_TIMEOUT_MS = 12_000;
 
 async function resolveSpotifyEpisodeFallback(client, interaction, url) {
@@ -553,8 +554,9 @@ export async function playQuery(client, interaction, query) {
   ) {
     let added = 0;
     let skipped = 0;
+    const tracksToProcess = tracks.slice(0, MAX_PLAYLIST_TRACKS);
 
-    for (const track of tracks) {
+    for (const track of tracksToProcess) {
       if (!track) {
         continue;
       }
@@ -575,10 +577,11 @@ export async function playQuery(client, interaction, query) {
       await startPlayback(player);
     }
 
+    const isCapped = tracks.length > MAX_PLAYLIST_TRACKS;
     return {
       embed: successEmbed(
         'Playlist Added',
-        `**${playlistInfo?.name || 'Playlist'}**\nAdded ${added} of ${tracks.length} track(s).${
+        `**${playlistInfo?.name || 'Playlist'}**\nAdded ${added} of ${isCapped ? `${MAX_PLAYLIST_TRACKS} (tối đa ${MAX_PLAYLIST_TRACKS} bài để tối ưu RAM)` : tracks.length} track(s).${
           skipped ? ` Skipped ${skipped} duplicate(s).` : ''
         }`,
       ),

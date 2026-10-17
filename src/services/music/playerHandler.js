@@ -13,7 +13,7 @@ import {
     buildPlayerButtonRows,
 } from './musicEmbeds.js';
 
-const UPDATE_INTERVAL_MS = 15 * 1000;
+const UPDATE_INTERVAL_MS = 30 * 1000;
 export const IDLE_DISCONNECT_MS = 3 * 60 * 1000; // 3 phút tự động rời kênh nếu không có nhạc
 
 export function scheduleIdleDisconnect(client, guildId, player = null) {
@@ -92,12 +92,19 @@ async function editOrSendPlayerMessage(
      */
     if (guildData.playerMessageId) {
         try {
-            const msg =
-                await channel.messages.fetch(
+            if (typeof channel.messages.edit === 'function') {
+                await channel.messages.edit(
                     guildData.playerMessageId,
+                    payload,
                 );
+            } else {
+                const msg =
+                    await channel.messages.fetch(
+                        guildData.playerMessageId,
+                    );
 
-            await msg.edit(payload);
+                await msg.edit(payload);
+            }
 
             return;
         } catch {
@@ -227,10 +234,20 @@ function startUpdateInterval(
     guildData.updateInterval =
         setInterval(
             () => {
-                refreshPlayerMessage(
-                    client,
-                    guildId,
-                );
+                const player =
+                    client.riffy?.players?.get(
+                        guildId,
+                    );
+
+                if (
+                    player &&
+                    !player.paused
+                ) {
+                    refreshPlayerMessage(
+                        client,
+                        guildId,
+                    );
+                }
             },
             UPDATE_INTERVAL_MS,
         );

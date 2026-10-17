@@ -11,4 +11,4 @@ COPY . .
 
 # Set production environment and launch single-process controller with memory optimization flags
 ENV NODE_ENV=production
-CMD ["node", "--optimize-for-size", "--max-old-space-size=96", "--expose-gc", "src/app.js"]
+CMD ["node", "--optimize-for-size", "--max-old-space-size=128", "--expose-gc", "src/app.js"]
