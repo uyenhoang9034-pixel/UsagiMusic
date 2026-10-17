@@ -79,6 +79,20 @@ const coordinator = {
       assignments.set(guildId, guildAssignments);
     }
 
+    // Clean up stale assignments for bots that no longer have an active player in this guild
+    for (const [idx] of guildAssignments.entries()) {
+      const b = bots.get(idx);
+      const player = b?.riffy?.players?.get(guildId);
+      if (!player) {
+        guildAssignments.delete(idx);
+      }
+    }
+    if (!guildAssignments.size) {
+      assignments.delete(guildId);
+      guildAssignments = new Map();
+      assignments.set(guildId, guildAssignments);
+    }
+
     // Same voice always keeps the same Music bot
     let selectedIndex = [...guildAssignments.entries()]
       .find(([, channelId]) => channelId === voiceChannelId)?.[0];

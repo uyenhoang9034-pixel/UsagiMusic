@@ -122,7 +122,10 @@ export class UsagiMusicWorker extends Client {
     );
 
     this.riffy.on('playerDisconnect', (player) => {
-      this.coordinator?.releaseAssignment(this.workerIndex, player.guildId);
+      this.coordinator?.releaseAssignment(this.workerIndex, player?.guildId);
+    });
+    this.riffy.on('playerDestroy', (player) => {
+      this.coordinator?.releaseAssignment(this.workerIndex, player?.guildId);
     });
 
     this.ready = true;

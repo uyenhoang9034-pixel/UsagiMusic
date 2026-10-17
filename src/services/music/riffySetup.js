@@ -50,6 +50,13 @@ if (Node?.prototype) {
     }
 }
 
+const VOICE_GATEWAY_EVENTS = new Set([
+    'VOICE_STATE_UPDATE',
+    'VOICE_SERVER_UPDATE',
+    GatewayDispatchEvents.VoiceStateUpdate,
+    GatewayDispatchEvents.VoiceServerUpdate,
+]);
+
 export function initializeMusic(client) {
     if (!lavalinkConfig.nodes?.length) {
         logger.error('No Lavalink nodes configured. Add lavalink/nodes.json, set LAVALINK_NODES, or set LAVALINK_HOST in your environment.');
@@ -183,14 +190,7 @@ export function initializeMusic(client) {
     };
 
     client.on('raw', (packet) => {
-        if (
-            ![
-                'VOICE_STATE_UPDATE',
-                'VOICE_SERVER_UPDATE',
-                GatewayDispatchEvents.VoiceStateUpdate,
-                GatewayDispatchEvents.VoiceServerUpdate,
-            ].includes(packet?.t)
-        ) {
+        if (!packet?.t || !VOICE_GATEWAY_EVENTS.has(packet.t)) {
             return;
         }
         client.riffy.updateVoiceState(packet);

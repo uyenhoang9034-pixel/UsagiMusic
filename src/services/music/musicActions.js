@@ -25,6 +25,8 @@ import {
 
 import {
   refreshPlayerMessage,
+  scheduleIdleDisconnect,
+  IDLE_DISCONNECT_MS,
 } from './playerHandler.js';
 
 const YOUTUBE_URL_PATTERN = /(?:youtube\.com|youtu\.be)/i;
@@ -345,6 +347,7 @@ export async function ensurePlayer(client, interaction) {
 
 export async function joinVoiceChannel(client, interaction) {
   assertRiffyAvailable(client);
+  await assertLavalinkNodeAvailable(client);
   assertInVoice(interaction.member);
 
   const guildId = interaction.guild.id;
@@ -377,6 +380,10 @@ export async function joinVoiceChannel(client, interaction) {
   }
 
   player.setVolume(guildData.volume);
+
+  if (!player.playing && !player.paused && !player.current) {
+    scheduleIdleDisconnect(client, guildId, player);
+  }
 
   return successEmbed(
     'Joined Voice Channel',
@@ -430,7 +437,12 @@ export async function playQuery(client, interaction, query) {
     );
   }
 
-  const { player } = await ensurePlayer(client, interaction);
+  const { player, guildData } = await ensurePlayer(client, interaction);
+
+  if (guildData?.idleTimeout) {
+    clearTimeout(guildData.idleTimeout);
+    guildData.idleTimeout = null;
+  }
 
   const isUrl = /^https?:\/\//i.test(cleanQuery);
 
@@ -993,11 +1005,23 @@ export async function setTwentyFourSeven(client, interaction, enabled) {
   const guildData = getGuildMusicData(interaction.guild.id, client || interaction.client);
   guildData.twentyFourSeven = Boolean(enabled);
 
+  if (guildData.twentyFourSeven) {
+    if (guildData.idleTimeout) {
+      clearTimeout(guildData.idleTimeout);
+      guildData.idleTimeout = null;
+    }
+  } else {
+    const player = getPlayer(client, interaction.guild.id);
+    if (player && !player.playing && !player.paused && !player.current) {
+      scheduleIdleDisconnect(client, interaction.guild.id, player);
+    }
+  }
+
   return successEmbed(
     '24/7 Mode',
     guildData.twentyFourSeven
       ? '24/7 mode enabled. The bot will stay in the voice channel when the queue ends.'
-      : '24/7 mode disabled. The bot will leave after 30 seconds of idle time.',
+      : '24/7 mode disabled. The bot will leave after 3 minutes of idle time.',
   );
 }
 
@@ -1098,6 +1122,10 @@ export async function destroyPlayerSession(
         player.destroy();
       } catch {
         // Player may already be destroyed.
+      }
+      deleteGuildMusicData(guildId, client);
+      if (client?.coordinator?.releaseAssignment && client?.workerIndex) {
+        client.coordinator.releaseAssignment(client.workerIndex, guildId);
       }
     }
   }

@@ -14,7 +14,40 @@ import {
 } from './musicEmbeds.js';
 
 const UPDATE_INTERVAL_MS = 15 * 1000;
-const IDLE_DISCONNECT_MS = 30 * 1000;
+export const IDLE_DISCONNECT_MS = 3 * 60 * 1000; // 3 phút tự động rời kênh nếu không có nhạc
+
+export function scheduleIdleDisconnect(client, guildId, player = null) {
+    const guildData = getGuildMusicData(guildId, client);
+    if (guildData.twentyFourSeven) return;
+
+    if (guildData.idleTimeout) {
+        clearTimeout(guildData.idleTimeout);
+    }
+
+    guildData.idleTimeout = setTimeout(() => {
+        try {
+            const currentPlayer =
+                client.riffy?.players?.get(guildId) || player;
+
+            if (
+                currentPlayer &&
+                !currentPlayer.playing &&
+                !currentPlayer.paused &&
+                !currentPlayer.current
+            ) {
+                currentPlayer.destroy();
+                deleteGuildMusicData(guildId, client);
+                client.coordinator?.releaseAssignment?.(client.workerIndex, guildId);
+            }
+        } catch {
+            /**
+             * Player already destroyed.
+             */
+        }
+
+        guildData.idleTimeout = null;
+    }, IDLE_DISCONNECT_MS);
+}
 
 /**
  * =========================================================
@@ -544,49 +577,9 @@ export function setupPlayerHandler(
                 }
 
                 /**
-                 * Schedule Music player
-                 * disconnect when idle.
+                 * Schedule Music player disconnect when idle (3 minutes).
                  */
-                if (
-                    !guildData.twentyFourSeven
-                ) {
-                    if (
-                        guildData.idleTimeout
-                    ) {
-                        clearTimeout(
-                            guildData.idleTimeout,
-                        );
-                    }
-
-                    guildData.idleTimeout =
-                        setTimeout(
-                            () => {
-                                try {
-                                    const currentPlayer =
-                                        client.riffy.players.get(
-                                            player.guildId,
-                                        );
-
-                                    if (
-                                        currentPlayer &&
-                                        !currentPlayer.playing &&
-                                        !currentPlayer.paused &&
-                                        !currentPlayer.current
-                                    ) {
-                                        currentPlayer.destroy();
-                                    }
-                                } catch {
-                                    /**
-                                     * Player already destroyed.
-                                     */
-                                }
-
-                                guildData.idleTimeout =
-                                    null;
-                            },
-                            IDLE_DISCONNECT_MS,
-                        );
-                }
+                scheduleIdleDisconnect(client, player.guildId, player);
             } catch (error) {
                 logger.error(
                     'Music queueEnd error:',
